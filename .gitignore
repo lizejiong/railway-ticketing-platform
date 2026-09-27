@@ -1,0 +1,36 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Maven
+target/
+.flattened-pom.xml
+dependency-reduced-pom.xml
+
+# Java
+*.class
+hs_err_pid*
+replay_pid*
+
+# Frontend
+node_modules/
+dist/
+coverage/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+application-local.yaml
+application-local.yml
+
+# Logs
+*.log
+logs/
+
+# Operating systems
+.DS_Store
+Thumbs.db
+Desktop.ini

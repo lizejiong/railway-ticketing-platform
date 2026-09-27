@@ -1,0 +1,191 @@
+# 项目 Monorepo 结构设计
+
+## 1. 项目边界
+
+整个仓库包含三个可以独立构建的主体：
+
+1. `backend/components`：后端组件库，提供框架无关能力和 Spring Boot Starter。
+2. `backend/services/xxx-service`：后端微服务，承载业务用例并消费组件库。
+3. `frontend/web`：前端应用，只通过 HTTP API 与微服务通信。
+
+推荐放在同一个 Monorepo 中，统一文档、CI、开发环境和版本提交，但不把 Java 与前端构建工具强行混在一起。
+
+## 2. 推荐目录
+
+```text
+12306/
+├── .github/
+│   └── workflows/
+│       ├── backend.yml
+│       └── frontend.yml
+├── backend/
+│   ├── pom.xml
+│   ├── dependencies/
+│   │   └── pom.xml
+│   ├── components/
+│   │   └── pom.xml
+│   └── services/
+│       └── xxx-service/
+│           └── pom.xml
+├── frontend/
+│   └── web/
+├── deploy/
+│   ├── compose.yaml
+│   ├── docker/
+│   │   ├── backend.Dockerfile
+│   │   └── frontend.Dockerfile
+│   └── nginx/
+│       └── default.conf
+├── docs/
+│   ├── architecture/
+│   ├── api/
+│   └── development/
+├── scripts/
+├── .editorconfig
+├── .gitignore
+└── README.md
+```
+
+当前阶段只创建聚合目录与 POM，不预先填充组件源码、业务源码、资源文件或测试文件。`xxx-service` 是服务目录占位示例，实际创建服务模块时替换为明确的业务名称。
+
+## 3. 后端构建边界
+
+`backend/pom.xml` 是所有 Java 模块的聚合入口，只声明 `<modules>`，不同时承担依赖版本管理：
+
+```text
+backend/pom.xml
+├── dependencies
+├── components
+└── services/xxx-service
+```
+
+`backend/dependencies/pom.xml` 是统一依赖版本管理文件，使用 `pom` packaging，通过 `dependencyManagement` 管理：
+
+- Spring Boot BOM；
+- 数据库、缓存、JSON、日志、测试等第三方依赖版本；
+- 本仓库各个组件 Starter 的版本；
+- Java、Maven 插件等需要全局统一的版本属性。
+
+它是依赖继承链的最上层，不继承 `backend/pom.xml`，避免聚合 POM 与 BOM 形成循环关系。除依赖版本外，它还通过 `pluginManagement` 保存 Java 编译、测试和代码检查插件版本，作为本仓库 Java 模块的直接父 POM。核心结构如下：
+
+```xml
+<groupId>com.example</groupId>
+<artifactId>backend-dependencies</artifactId>
+<version>0.1.0-SNAPSHOT</version>
+<packaging>pom</packaging>
+
+<properties>
+    <java.version>17</java.version>
+    <spring-boot.version>4.0.8</spring-boot.version>
+    <!-- 其他第三方依赖版本统一放在这里 -->
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-dependencies</artifactId>
+            <version>${spring-boot.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+        <!-- 数据库、缓存、工具库及内部 Starter -->
+    </dependencies>
+</dependencyManagement>
+```
+
+`backend/components/pom.xml` 直接继承 dependencies POM，同时作为组件库的总聚合 POM。业务服务也直接继承 dependencies POM。每一种组件占一个独立目录和 Maven 模块，组件自己的 API、自动配置、依赖与测试放在一起，详细设计见 [后端组件库结构](./spring-boot-starter-structure.md)。
+
+`backend/services/xxx-service` 后续会成为可运行的 Spring Boot 应用。它按需依赖具体组件，但组件库绝不能反向依赖微服务。
+
+## 4. 业务服务内部结构
+
+当正式开始实现某个业务服务时，采用下面的分层目录。当前阶段不创建这些源码和资源文件：
+
+```text
+xxx-service/
+├── pom.xml
+└── src/
+    ├── main/
+    │   ├── java/.../biz/xxxservice/
+    │   │   ├── controller/
+    │   │   ├── service/
+    │   │   ├── dao/
+    │   │   │   ├── entity/
+    │   │   │   └── mapper/
+    │   │   ├── dto/
+    │   │   ├── remote/
+    │   │   ├── mq/
+    │   │   ├── config/
+    │   │   └── XxxApplication.java
+    │   └── resources/
+    │       ├── application.yaml
+    │       ├── mapper/
+    │       ├── shardingsphere-config.yaml
+    │       └── lua/
+    └── test/
+```
+
+目录职责：
+
+- `controller`：HTTP 接口层。
+- `service`：业务接口与实现。
+- `dao/entity`：数据库实体（DO）。
+- `dao/mapper`：MyBatis 数据访问接口。
+- `dto`：接口请求和响应对象。
+- `remote`：调用其他微服务的客户端。
+- `mq`：RocketMQ 消息生产与消费。
+- `config`：当前服务的配置类。
+- `resources/mapper`：MyBatis XML SQL。
+- `shardingsphere-config.yaml`：仅分库分表服务创建。
+- `resources/lua`：仅需要 Redis Lua 脚本的服务创建。
+
+这些目录按实际需要逐步创建，不为暂时没有的功能保留空目录。
+
+## 5. 前端结构
+
+当前只保留 `frontend/web` 项目边界，不创建 `package.json`、`src`、构建配置或页面目录。前端框架、包管理器、路由、状态管理、测试方案和目录范式在开始前端开发时再单独确认。
+
+## 6. 部署与本地开发
+
+`deploy/compose.yaml` 编排本地完整环境，包括后端、前端、数据库及真实需要的中间件。Dockerfile 与 Nginx 配置集中在 `deploy`，避免散落在业务源码中。
+
+根目录脚本只负责跨项目动作，例如：
+
+- 同时启动前后端开发环境；
+- 执行完整检查；
+- 初始化本地依赖；
+- 生成或校验 API 客户端。
+
+后端单独构建仍使用 `backend/mvnw`，前端单独构建仍使用自己的包管理器命令。
+
+## 7. 依赖方向
+
+```text
+frontend/web
+    │ HTTP/JSON
+    ▼
+backend/services/xxx-service
+    │ Maven dependency
+    ▼
+backend/components/<component>
+    └── <component>-spring-boot-starter
+
+所有 Java 模块
+    │ inherits
+    ▼
+backend/dependencies/pom.xml
+```
+
+基础设施配置可以引用构建产物，但源码模块不得依赖 `deploy`。前端不得通过复制 Java 模型共享类型，API 类型应由 OpenAPI 等契约生成或独立维护。
+
+## 8. 第一阶段范围
+
+首轮只创建能够表达边界的最小骨架：
+
+- 后端聚合 POM；
+- 统一 dependencies POM；
+- 组件聚合 POM；
+- 已经确定名称的业务服务 POM。
+
+暂不创建组件实现、业务类、Mapper、配置文件、前端代码、部署文件或 CI。后续每确定一个组件或服务，再单独设计和实现。
