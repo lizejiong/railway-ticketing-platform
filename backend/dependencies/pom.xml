@@ -36,6 +36,7 @@
         <transmittable-thread-local.version>2.14.2</transmittable-thread-local.version>
         <hippo4j-threadpool-config-mode.version>1.5.0</hippo4j-threadpool-config-mode.version>
         <micrometer-registry-prometheus.version>1.10.6</micrometer-registry-prometheus.version>
+        <railway-components.version>0.1.0-SNAPSHOT</railway-components.version>
 
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
@@ -44,6 +45,12 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-base-spring-boot-starter</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>

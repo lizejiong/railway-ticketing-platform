@@ -16,4 +16,8 @@
 
     <name>Railway Components</name>
     <description>Aggregator for reusable Spring Boot components</description>
+
+    <modules>
+        <module>base</module>
+    </modules>
 </project>

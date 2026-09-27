@@ -1,0 +1,10 @@
+{
+  "properties": [
+    {
+      "name": "railway.fastjson.safe-mode",
+      "type": "java.lang.Boolean",
+      "description": "Whether Fastjson2 safe mode is enabled to disable auto type resolution.",
+      "defaultValue": true
+    }
+  ]
+}
