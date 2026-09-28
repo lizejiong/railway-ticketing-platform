@@ -1,0 +1,33 @@
+{
+  "properties": [
+    {
+      "name": "railway.user.jwt.secret",
+      "type": "java.lang.String",
+      "description": "UTF-8 secret used to sign user JWTs. Must contain at least 32 bytes."
+    },
+    {
+      "name": "railway.user.jwt.expiration",
+      "type": "java.time.Duration",
+      "description": "Lifetime of a generated user JWT.",
+      "defaultValue": "2h"
+    },
+    {
+      "name": "railway.user.jwt.issuer",
+      "type": "java.lang.String",
+      "description": "Expected issuer written to and verified from user JWTs.",
+      "defaultValue": "railway-platform"
+    },
+    {
+      "name": "railway.user.jwt.header-name",
+      "type": "java.lang.String",
+      "description": "HTTP request header carrying the user JWT.",
+      "defaultValue": "Authorization"
+    },
+    {
+      "name": "railway.user.jwt.token-prefix",
+      "type": "java.lang.String",
+      "description": "Optional prefix removed before JWT parsing.",
+      "defaultValue": "Bearer "
+    }
+  ]
+}

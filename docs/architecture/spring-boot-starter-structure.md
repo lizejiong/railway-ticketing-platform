@@ -18,14 +18,29 @@ backend/components/
 ├── base/
 │   ├── pom.xml
 │   └── src/
-└── convention/
+├── convention/
+│   ├── pom.xml
+│   └── src/
+└── user/
     ├── pom.xml
     └── src/
 ```
 
-当前已经创建 `base` Starter 和纯 Java 的 `convention` 规约组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter、纯 Java 的 `convention` 规约组件和 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `convention` 只提供错误码、异常、分页和响应契约，不包含自动配置，因此 artifactId 使用 `railway-convention`，不使用 `spring-boot-starter` 后缀。它不依赖 Web、Spring 或 MyBatis-Plus；业务服务负责在边界层完成框架对象与规约对象之间的转换。
+
+`user` 提供以下能力：
+
+- `JwtTokenGenerator`：使用 HS256 生成和校验登录凭证，校验签名、过期时间与签发方；
+- `UserInfoDTO`：不可变的当前用户参数，包含用户 ID、用户名、真实姓名和原始 Token；
+- `UserContext`：基于 Alibaba TransmittableThreadLocal 保存当前执行上下文的用户；
+- `UserContextFilter`：从配置的 HTTP Header 解析 JWT，在请求期间绑定用户，并在请求结束后清理；
+- `UserAutoConfiguration`：配置 `railway.user.jwt.secret` 后自动注册生成器与过滤器。
+
+过滤器默认只信任 `Authorization: Bearer <token>` 中经过签名校验的 Claims，不直接信任客户端提交的独立 `userId`、`username` 或 `realName` Header。若未来由网关解析 JWT 并传递用户 Header，必须同时建立网关到微服务的可信网络边界、清除外部同名 Header，并另行设计内部请求签名。
+
+TransmittableThreadLocal 解决的是线程池复用时普通 `InheritableThreadLocal` 无法按任务传播的问题。TTL 在任务提交时捕获上下文、执行前安装、执行后恢复；执行器必须通过 `TtlExecutors` 包装或由 TTL Agent 增强。它不能替代生命周期清理，因此过滤器始终在 `finally` 中调用 `UserContext.removeUser()`，防止容器线程复用时串号。
 
 ## 3. 总 POM
 

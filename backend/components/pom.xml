@@ -20,5 +20,6 @@
     <modules>
         <module>base</module>
         <module>convention</module>
+        <module>user</module>
     </modules>
 </project>

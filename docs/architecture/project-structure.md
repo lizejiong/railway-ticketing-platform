@@ -28,7 +28,9 @@
 │   │   ├── pom.xml
 │   │   ├── base/
 │   │   │   └── pom.xml
-│   │   └── convention/
+│   │   ├── convention/
+│   │   │   └── pom.xml
+│   │   └── user/
 │   │       └── pom.xml
 │   └── services/
 │       └── xxx-service/
@@ -102,6 +104,8 @@ backend/pom.xml
 `backend/parent/pom.xml` 是仓库内 Java 模块的统一父 POM。它导入 dependencies BOM，并通过属性和 `pluginManagement` 管理 Java 版本、编码、编译、测试与代码检查等构建约定。
 
 `backend/components/pom.xml` 继承 parent POM，同时作为组件库的总聚合 POM。业务服务也直接继承 parent POM。每一种组件占一个独立目录和 Maven 模块，组件自己的 API、自动配置、依赖与测试放在一起。纯契约组件不强制依赖 Spring Boot，详细设计见 [后端组件库结构](./spring-boot-starter-structure.md)。
+
+当前 `user` Starter 单向依赖 `base`，复用用户字段和过滤器顺序常量；业务服务依赖 `user`，组件不反向依赖任何业务服务。
 
 `backend/services/xxx-service` 后续会成为可运行的 Spring Boot 应用。它按需依赖具体组件，但组件库绝不能反向依赖微服务。
 
