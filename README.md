@@ -15,6 +15,8 @@ backend/
 │   ├── pom.xml
 │   ├── base/
 │   │   └── pom.xml
+│   ├── common/
+│   │   └── pom.xml
 │   ├── convention/
 │   │   └── pom.xml
 │   ├── designpattern/
@@ -32,6 +34,7 @@ frontend/
 - `backend/parent/pom.xml`：统一管理 Java、编码和 Maven 插件等构建约定，并导入 dependencies BOM。
 - `backend/components/pom.xml`：聚合逐个增加的后端组件与 Spring Boot Starter。
 - `backend/components/base`：基础常量、单例容器、启动事件和基础自动配置。
+- `backend/components/common`：通用码值枚举、断言、对象复制、环境和线程工具。
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。

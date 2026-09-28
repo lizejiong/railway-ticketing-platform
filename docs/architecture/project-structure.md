@@ -28,6 +28,8 @@
 │   │   ├── pom.xml
 │   │   ├── base/
 │   │   │   └── pom.xml
+│   │   ├── common/
+│   │   │   └── pom.xml
 │   │   ├── convention/
 │   │   │   └── pom.xml
 │   │   ├── designpattern/

@@ -18,6 +18,9 @@ backend/components/
 ├── base/
 │   ├── pom.xml
 │   └── src/
+├── common/
+│   ├── pom.xml
+│   └── src/
 ├── convention/
 │   ├── pom.xml
 │   └── src/
@@ -29,7 +32,17 @@ backend/components/
     └── src/
 ```
 
-当前已经创建 `base` Starter、纯 Java 的 `convention` 与 `designpattern` 组件，以及 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter、`common`、纯 Java 的 `convention` 与 `designpattern` 组件，以及 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+
+`common` 是普通 JAR，artifactId 为 `railway-common`，依赖 `convention` 提供一致的客户端参数异常，并提供：
+
+- `CodeEnum`、`DeleteEnum`、`FlagEnum`、`OperationTypeEnum` 和 `StatusEnum`：稳定的通用整数码值；
+- `Assert`：失败时抛出 `ClientException` 的参数断言；
+- `BeanUtil`：使用 Spring `BeanUtils` 复制同名 JavaBean 属性；
+- `EnvironmentUtil`：基于调用方传入的 Spring `Environment` 判断活动 Profile；
+- `ThreadUtil`：命名线程工厂和保留中断状态的休眠方法。
+
+该模块不包含自动配置，也不保存全局应用上下文或全局线程池。
 
 `convention` 只提供错误码、异常、分页和响应契约，不包含自动配置，因此 artifactId 使用 `railway-convention`，不使用 `spring-boot-starter` 后缀。它不依赖 Web、Spring 或 MyBatis-Plus；业务服务负责在边界层完成框架对象与规约对象之间的转换。
 
@@ -37,7 +50,7 @@ backend/components/
 
 - `Builder<T>`：定义 `build()` 构建契约，具体对象在所属模块实现专用 Builder；
 - `ResponsibilityChain`：按处理器顺序稳定执行，通过 `CONTINUE` 或 `STOP` 显式控制链路；
-- `StrategySelector`：按唯一标识注册、选择和执行策略，初始化后不可变并支持并发读取。
+- `StrategySelector<REQUEST, RESPONSE>`：按唯一业务标识执行同一请求、响应类型的策略。
 
 该模块不扫描 Spring Bean。需要容器集成时，由业务服务注入具有明确泛型的处理器或策略列表后完成组装。
 

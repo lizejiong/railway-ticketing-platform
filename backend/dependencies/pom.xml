@@ -44,6 +44,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-common</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-convention</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>
