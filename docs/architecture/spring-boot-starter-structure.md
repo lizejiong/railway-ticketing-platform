@@ -36,7 +36,7 @@ backend/components/
 - `UserInfoDTO`：不可变的当前用户参数，包含用户 ID、用户名、真实姓名和原始 Token；
 - `UserContext`：基于 Alibaba TransmittableThreadLocal 保存当前执行上下文的用户；
 - `UserContextFilter`：从配置的 HTTP Header 解析 JWT，在请求期间绑定用户，并在请求结束后清理；
-- `UserAutoConfiguration`：配置 `railway.user.jwt.secret` 后自动注册生成器与过滤器。
+- `UserAutoConfiguration`：配置 `railway.user.jwt.secret` 后自动注册生成器，并且只在 Servlet Web 应用中注册过滤器。
 
 过滤器默认只信任 `Authorization: Bearer <token>` 中经过签名校验的 Claims，不直接信任客户端提交的独立 `userId`、`username` 或 `realName` Header。若未来由网关解析 JWT 并传递用户 Header，必须同时建立网关到微服务的可信网络边界、清除外部同名 Header，并另行设计内部请求签名。
 
