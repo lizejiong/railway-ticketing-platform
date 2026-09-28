@@ -40,7 +40,9 @@
 │   │   │   └── pom.xml
 │   │   ├── persistence/
 │   │   │   └── pom.xml
-│   │   └── user/
+│   │   ├── user/
+│   │   │   └── pom.xml
+│   │   └── web/
 │   │       └── pom.xml
 │   └── services/
 │       └── xxx-service/
@@ -122,6 +124,8 @@ backend/pom.xml
 `log` 是基于 Spring AOP 的方法调用日志 Starter。业务方法通过 `@ILog` 显式选择记录范围，切面统一记录参数、返回值、执行耗时和异常，并提供全局开关与内容长度限制。
 
 `persistence` 是 MyBatis-Plus Starter，依赖 `convention` 的分页契约和 `idgenerator` 的统一雪花算法。它提供 MySQL 分页插件、`BaseDO`、元数据自动填充、分页转换工具，并在存在工作节点分配器时替换 MyBatis-Plus 主键生成器。
+
+`web` 是 Servlet Web Starter，复用 `convention` 的响应与异常契约，提供 `Results` 快捷响应构造和全局异常处理器。
 
 `backend/services/xxx-service` 后续会成为可运行的 Spring Boot 应用。它按需依赖具体组件，但组件库绝不能反向依赖微服务。
 

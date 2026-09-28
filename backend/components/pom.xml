@@ -26,5 +26,6 @@
         <module>log</module>
         <module>persistence</module>
         <module>user</module>
+        <module>web</module>
     </modules>
 </project>

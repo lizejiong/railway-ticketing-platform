@@ -36,12 +36,15 @@ backend/components/
 ├── persistence/
 │   ├── pom.xml
 │   └── src/
-└── user/
+├── user/
+│   ├── pom.xml
+│   └── src/
+└── web/
     ├── pom.xml
     └── src/
 ```
 
-当前已经创建 `base`、`log`、`persistence` 与 `user` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base`、`log`、`persistence`、`user` 与 `web` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `common` 是普通 JAR，artifactId 为 `railway-common`，依赖 `convention` 提供一致的客户端参数异常，并提供：
 
@@ -78,6 +81,8 @@ backend/components/
 `log` Starter 提供方法级 `@ILog` 注解、`ILogAspect` 和 `LogAutoConfiguration`。切面通过 Spring AOP 环绕通知记录方法参数、返回值、执行耗时和异常；参数与返回值使用 Fastjson2 格式化，并受 `railway.log.max-content-length` 限制。敏感方法可通过注解关闭参数或返回值记录，整个组件可通过 `railway.log.enabled=false` 关闭。
 
 `persistence` Starter 提供 MySQL 分页拦截器、`BaseDO`、元数据自动填充、分页对象转换和 MyBatis-Plus 雪花 ID 适配。它复用 `convention` 分页契约和 `idgenerator` 发号能力，不重复实现雪花算法。
+
+`web` Starter 提供 `Results` 快捷响应构造，以及参数异常、自定义异常和未知异常三个统一处理入口。
 
 `user` 提供以下能力：
 

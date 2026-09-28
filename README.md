@@ -27,7 +27,9 @@ backend/
 │   │   └── pom.xml
 │   ├── persistence/
 │   │   └── pom.xml
-│   └── user/
+│   ├── user/
+│   │   └── pom.xml
+│   └── web/
 │       └── pom.xml
 └── services/
 
@@ -47,6 +49,7 @@ frontend/
 - `backend/components/log`：基于 `@ILog` 和 Spring AOP 的方法入参、返回值与耗时日志。
 - `backend/components/persistence`：MyBatis-Plus 分页、基础持久化对象、字段自动填充和统一主键生成。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
+- `backend/components/web`：统一 Web 异常响应和 `Results` 快捷构造。
 - `backend/services`：后续按业务服务名称增加独立微服务模块。
 - `frontend/web`：仅保留前端项目边界，开发范式后续确认。
 
@@ -132,6 +135,25 @@ railway:
 ```
 
 该组件基于 Spring 代理，只拦截从 Bean 外部进入代理对象的调用；同一个 Bean 内通过 `this` 发起的自调用不会触发 `@ILog`。超长参数和结果会按 `max-content-length` 截断，JSON 格式化失败会回退为普通字符串，不影响业务方法执行。
+
+## Web Starter
+
+业务服务引入 `railway-web-spring-boot-starter` 后，会自动注册全局异常处理器，并可以通过 `Results` 快速构造统一响应：
+
+```java
+return Results.success(trainDTO);
+return Results.failure(TrainErrorCode.TRAIN_NOT_FOUND);
+```
+
+`Results` 会为每个响应生成请求 ID。全局异常处理器只保留三个统一入口：
+
+| 异常 | 响应错误码 |
+| --- | --- |
+| 参数绑定、类型转换或请求体错误 | `BaseErrorCode.CLIENT_ERROR` |
+| `AbstractException` 及其子类 | 异常携带的错误码和消息 |
+| 其他 `Exception` | `BaseErrorCode.SERVICE_ERROR` |
+
+未知异常不会把内部异常消息返回给客户端，但会在服务端日志中保留堆栈。异常响应通过 `Result.code` 表达结果，HTTP 响应状态保持 200。
 
 ## Persistence Starter
 
