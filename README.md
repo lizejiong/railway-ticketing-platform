@@ -21,6 +21,8 @@ backend/
 │   │   └── pom.xml
 │   ├── designpattern/
 │   │   └── pom.xml
+│   ├── idgenerator/
+│   │   └── pom.xml
 │   └── user/
 │       └── pom.xml
 └── services/
@@ -37,6 +39,7 @@ frontend/
 - `backend/components/common`：通用码值枚举、断言、对象复制、环境和线程工具。
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
+- `backend/components/idgenerator`：分布式唯一 Snowflake ID 生成器、节点分配策略和 ID 解析工具。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
 - `backend/services`：后续按业务服务名称增加独立微服务模块。
 - `frontend/web`：仅保留前端项目边界，开发范式后续确认。
@@ -68,6 +71,30 @@ OrderResult result = selector.execute("high-speed", request);
 ```
 
 该模块不自动扫描 Spring Bean。Spring 业务服务可以注入 `List<Strategy<OrderRequest, OrderResult>>` 或 `List<ChainHandler<T>>` 后构造选择器和责任链，从而保持公共组件框架无关。
+
+## ID Generator
+
+`railway-id-generator` 提供 Redis 租约式工作节点分配器 `RedisWorkerNodeAssigner`。Redis 原子分配一个 `0` 到 `1023` 的 10 位 `nodeId`，直接写入 Snowflake ID；租约续租失败后，`SnowflakeIdGenerator` 会拒绝继续生成 ID，避免节点号被其他实例复用时产生重复值。
+
+组件内的 Spring Data Redis 依赖为 optional，业务服务需要自行直接引入 Redis Starter：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+服务创建 `StringRedisTemplate` 后，组件自动注册带 `destroyMethod = "close"` 的 `RedisWorkerNodeAssigner`；没有 Redis Starter 或 `StringRedisTemplate` 时，不创建任何 Redis 工作节点策略。业务服务需要 ID 生成器时，再按自身业务边界组装：
+
+```java
+@Bean
+SnowflakeIdGenerator snowflakeIdGenerator(WorkerNodeAssigner workerNodeAssigner) {
+    return SnowflakeIdUtil.create(workerNodeAssigner);
+}
+```
+
+实现会为 Redis 租约 owner 附加随机 UUID，因此不会仅依赖重复的主机名判定实例唯一性。后续持久化组件接入 MyBatis-Plus 时，可将这个 `SnowflakeIdGenerator` 适配为 `IdentifierGenerator`。
 
 ## User Starter
 

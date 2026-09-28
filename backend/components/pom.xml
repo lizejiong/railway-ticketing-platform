@@ -22,6 +22,7 @@
         <module>common</module>
         <module>convention</module>
         <module>designpattern</module>
+        <module>idgenerator</module>
         <module>user</module>
     </modules>
 </project>

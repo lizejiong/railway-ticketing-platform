@@ -59,6 +59,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-id-generator</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-user-spring-boot-starter</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>

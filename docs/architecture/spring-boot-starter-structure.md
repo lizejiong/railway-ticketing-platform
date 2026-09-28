@@ -27,12 +27,15 @@ backend/components/
 ├── designpattern/
 │   ├── pom.xml
 │   └── src/
+├── idgenerator/
+│   ├── pom.xml
+│   └── src/
 └── user/
     ├── pom.xml
     └── src/
 ```
 
-当前已经创建 `base` Starter、`common`、纯 Java 的 `convention` 与 `designpattern` 组件，以及 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter、`common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件，以及 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `common` 是普通 JAR，artifactId 为 `railway-common`，依赖 `convention` 提供一致的客户端参数异常，并提供：
 
@@ -53,6 +56,18 @@ backend/components/
 - `StrategySelector<REQUEST, RESPONSE>`：按唯一业务标识执行同一请求、响应类型的策略。
 
 该模块不扫描 Spring Bean。需要容器集成时，由业务服务注入具有明确泛型的处理器或策略列表后完成组装。
+
+`idgenerator` 的核心 API 不要求 Redis，artifactId 为 `railway-id-generator`，提供经典 Snowflake 分布式唯一 ID 能力：
+
+- `SnowflakeIdGenerator`：生成正 `long` ID，位布局为 41 位毫秒时间差、10 位 `nodeId` 和 12 位毫秒序列；
+- `WorkerNodeAssigner`：节点编号分配 SPI；内置 `FixedWorkerNodeAssigner` 用于部署配置，`HostnameWorkerNodeAssigner` 用于解析 StatefulSet 风格的主机名末尾序号，`RedisWorkerNodeAssigner` 用于弹性部署时的 Redis 租约分配；
+- `SnowflakeIdUtil`：通过节点策略创建生成器，并解析 ID 的时间、节点号和序列部分。
+
+同一个 ID 域内的 `nodeId` 必须唯一，取值范围为 0 到 1023。基础组件不从 IP 或 MAC 地址推导节点编号，避免容器网络变化、地址复用导致冲突。
+
+`RedisWorkerNodeAssigner` 使用 Redis Lua 脚本原子地抢占、续租和释放一个完整节点号 `nodeId`，候选范围为 0 到 1023。全部 1024 个候选键使用相同 Redis Cluster hash tag，保证脚本可在 Redis Cluster 中执行；租约默认 30 秒、每三分之一租期续租。实例标识会附加随机 UUID 作为租约所有者。续租失败或 Redis 不可用时，分配器将标记租约失效，`SnowflakeIdGenerator` 在每次发号前检查租约并抛出异常，宁可拒绝服务也不继续冒险生成可能重复的 ID。应用关闭时调用 `close()` 会停止续租并尽力释放当前租约。
+
+组件以 optional 方式编译 Spring Boot 自动配置和 Spring Data Redis API，不会向依赖它的业务服务传递 Redis Starter。业务服务需要 Redis 节点分配时，必须直接引入 `spring-boot-starter-data-redis` 并配置 Redis；容器中存在 `StringRedisTemplate` 时，组件自动创建 `RedisWorkerNodeAssigner`，用户自行声明 `WorkerNodeAssigner` 时则退让。自动配置不依赖 `spring.data.redis.host`，因此同样兼容 URL、Sentinel、Cluster 或自定义连接工厂。未来部署到独立机房 Redis 时，可由新的策略计算 `nodeId = (datacenterId << 5) | workerId`，但 Snowflake 核心仍只处理 `nodeId`。系统时间发生回拨时，生成器同样会拒绝发号，生产环境应启用可靠的时间同步。
 
 `user` 提供以下能力：
 

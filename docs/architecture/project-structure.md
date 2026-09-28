@@ -34,6 +34,8 @@
 │   │   │   └── pom.xml
 │   │   ├── designpattern/
 │   │   │   └── pom.xml
+│   │   ├── idgenerator/
+│   │   │   └── pom.xml
 │   │   └── user/
 │   │       └── pom.xml
 │   └── services/
