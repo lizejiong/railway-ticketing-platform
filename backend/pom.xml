@@ -14,6 +14,7 @@
 
     <modules>
         <module>dependencies</module>
+        <module>parent</module>
         <module>components</module>
     </modules>
 </project>

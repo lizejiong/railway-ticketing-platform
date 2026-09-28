@@ -22,8 +22,12 @@
 │   ├── pom.xml
 │   ├── dependencies/
 │   │   └── pom.xml
-│   ├── components/
+│   ├── parent/
 │   │   └── pom.xml
+│   ├── components/
+│   │   ├── pom.xml
+│   │   └── base/
+│   │       └── pom.xml
 │   └── services/
 │       └── xxx-service/
 │           └── pom.xml
@@ -55,6 +59,7 @@
 ```text
 backend/pom.xml
 ├── dependencies
+├── parent
 ├── components
 └── services/xxx-service
 ```
@@ -63,10 +68,9 @@ backend/pom.xml
 
 - Spring Boot BOM；
 - 数据库、缓存、JSON、日志、测试等第三方依赖版本；
-- 本仓库各个组件 Starter 的版本；
-- Java、Maven 插件等需要全局统一的版本属性。
+- 本仓库各个组件 Starter 的版本。
 
-它是依赖继承链的最上层，不继承 `backend/pom.xml`，避免聚合 POM 与 BOM 形成循环关系。除依赖版本外，它还通过 `pluginManagement` 保存 Java 编译、测试和代码检查插件版本，作为本仓库 Java 模块的直接父 POM。核心结构如下：
+它是独立的纯 BOM，不作为仓库内模块的父 POM，也不保存构建插件配置。核心结构如下：
 
 ```xml
 <groupId>com.example</groupId>
@@ -75,8 +79,7 @@ backend/pom.xml
 <packaging>pom</packaging>
 
 <properties>
-    <java.version>17</java.version>
-    <spring-boot.version>4.0.8</spring-boot.version>
+    <spring-boot.version>3.0.7</spring-boot.version>
     <!-- 其他第三方依赖版本统一放在这里 -->
 </properties>
 
@@ -94,7 +97,9 @@ backend/pom.xml
 </dependencyManagement>
 ```
 
-`backend/components/pom.xml` 直接继承 dependencies POM，同时作为组件库的总聚合 POM。业务服务也直接继承 dependencies POM。每一种组件占一个独立目录和 Maven 模块，组件自己的 API、自动配置、依赖与测试放在一起，详细设计见 [后端组件库结构](./spring-boot-starter-structure.md)。
+`backend/parent/pom.xml` 是仓库内 Java 模块的统一父 POM。它导入 dependencies BOM，并通过属性和 `pluginManagement` 管理 Java 版本、编码、编译、测试与代码检查等构建约定。
+
+`backend/components/pom.xml` 继承 parent POM，同时作为组件库的总聚合 POM。业务服务也直接继承 parent POM。每一种组件占一个独立目录和 Maven 模块，组件自己的 API、自动配置、依赖与测试放在一起，详细设计见 [后端组件库结构](./spring-boot-starter-structure.md)。
 
 `backend/services/xxx-service` 后续会成为可运行的 Spring Boot 应用。它按需依赖具体组件，但组件库绝不能反向依赖微服务。
 
@@ -174,6 +179,9 @@ backend/components/<component>
 所有 Java 模块
     │ inherits
     ▼
+backend/parent/pom.xml
+    │ imports
+    ▼
 backend/dependencies/pom.xml
 ```
 
@@ -184,7 +192,8 @@ backend/dependencies/pom.xml
 首轮只创建能够表达边界的最小骨架：
 
 - 后端聚合 POM；
-- 统一 dependencies POM；
+- 纯 dependencies BOM；
+- 统一 parent POM；
 - 组件聚合 POM；
 - 已经确定名称的业务服务 POM。
 

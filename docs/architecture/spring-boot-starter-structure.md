@@ -6,7 +6,7 @@
 
 组件库采用按能力纵向拆分的结构：每一种组件占一个独立目录、一个 Maven 模块和一个可发布的 JAR。组件自己的 API、自动配置、配置属性、资源和测试全部放在同一目录中。
 
-顶层 `components/pom.xml` 是所有组件的父 POM 和聚合 POM，负责组件模块清单；它直接继承 `backend/dependencies/pom.xml`。
+顶层 `components/pom.xml` 是所有组件的父 POM 和聚合 POM，负责组件模块清单；它直接继承 `backend/parent/pom.xml`。
 
 这种结构适合当前项目，因为每个组件都可以单独开发、测试、引用和发布，不需要为了修改一个 Redis 组件，同时在 core、autoconfigure、starter 三个横向目录之间跳转。
 
@@ -14,10 +14,13 @@
 
 ```text
 backend/components/
-└── pom.xml
+├── pom.xml
+└── base/
+    ├── pom.xml
+    └── src/
 ```
 
-当前不创建任何具体组件目录。确定要开发某个组件时，再新增该组件目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 ## 3. 总 POM
 
@@ -40,7 +43,7 @@ backend/components/
 - 聚合实际存在的组件模块；
 - 作为所有组件模块的直接父 POM；
 - 声明组件共同需要、但与版本无关的构建约定；
-- 从 `backend/dependencies/pom.xml` 继承编译插件与统一依赖版本。
+- 从 `backend/parent/pom.xml` 继承构建插件，并通过 parent 导入统一依赖版本。
 
 Spring Boot、第三方库和组件自身的版本不写在这里，统一写入 `backend/dependencies/pom.xml`。
 
@@ -112,7 +115,7 @@ xxx-service
 
 ## 7. 统一依赖版本管理
 
-`backend/dependencies/pom.xml` 是整个后端工程的父 POM 和 BOM。仓库内 Java 模块直接继承它，发布后其他仓库也可以 import：
+`backend/dependencies/pom.xml` 是纯 BOM，只管理依赖版本；`backend/parent/pom.xml` 是仓库内 Java 模块的父 POM，导入该 BOM 并管理构建插件。发布后，其他仓库可以只 import dependencies BOM：
 
 ```xml
 <dependencyManagement>
@@ -131,7 +134,7 @@ xxx-service
 </dependencyManagement>
 ```
 
-该文件不包含 Java 源码或运行时依赖，主要保存 `<properties>`、`<dependencyManagement>` 和 `<pluginManagement>`。新增或升级依赖及插件版本时，只修改这一处。
+dependencies BOM 不包含 Java 源码、运行时依赖或插件配置，只保存依赖版本属性与 `<dependencyManagement>`。依赖版本在 dependencies 中升级，Java 与 Maven 插件版本在 parent 中升级。
 
 ## 8. 复杂组件的升级路径
 
