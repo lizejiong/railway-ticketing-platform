@@ -21,14 +21,25 @@ backend/components/
 ├── convention/
 │   ├── pom.xml
 │   └── src/
+├── designpattern/
+│   ├── pom.xml
+│   └── src/
 └── user/
     ├── pom.xml
     └── src/
 ```
 
-当前已经创建 `base` Starter、纯 Java 的 `convention` 规约组件和 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter、纯 Java 的 `convention` 与 `designpattern` 组件，以及 `user` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `convention` 只提供错误码、异常、分页和响应契约，不包含自动配置，因此 artifactId 使用 `railway-convention`，不使用 `spring-boot-starter` 后缀。它不依赖 Web、Spring 或 MyBatis-Plus；业务服务负责在边界层完成框架对象与规约对象之间的转换。
+
+`designpattern` 也是纯 Java JAR，artifactId 为 `railway-design-pattern`，提供：
+
+- `Builder<T>`：定义 `build()` 构建契约，具体对象在所属模块实现专用 Builder；
+- `ResponsibilityChain`：按处理器顺序稳定执行，通过 `CONTINUE` 或 `STOP` 显式控制链路；
+- `StrategySelector`：按唯一标识注册、选择和执行策略，初始化后不可变并支持并发读取。
+
+该模块不扫描 Spring Bean。需要容器集成时，由业务服务注入具有明确泛型的处理器或策略列表后完成组装。
 
 `user` 提供以下能力：
 

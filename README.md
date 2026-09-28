@@ -1,6 +1,6 @@
 # Railway Platform
 
-这是一个逐步建设的前后端 Monorepo。目前已建立后端 Maven 多模块结构、`base`、`convention` 和 `user` 组件，业务服务与前端工程将继续按模块演进。
+这是一个逐步建设的前后端 Monorepo。目前已建立后端 Maven 多模块结构、`base`、`convention`、`designpattern` 和 `user` 组件，业务服务与前端工程将继续按模块演进。
 
 ## 当前结构
 
@@ -17,6 +17,8 @@ backend/
 │   │   └── pom.xml
 │   ├── convention/
 │   │   └── pom.xml
+│   ├── designpattern/
+│   │   └── pom.xml
 │   └── user/
 │       └── pom.xml
 └── services/
@@ -31,11 +33,38 @@ frontend/
 - `backend/components/pom.xml`：聚合逐个增加的后端组件与 Spring Boot Starter。
 - `backend/components/base`：基础常量、单例容器、启动事件和基础自动配置。
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
+- `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
 - `backend/services`：后续按业务服务名称增加独立微服务模块。
 - `frontend/web`：仅保留前端项目边界，开发范式后续确认。
 
 详细设计见 [docs/architecture/project-structure.md](docs/architecture/project-structure.md)。
+
+## Design Pattern
+
+构建者模式仅提供 `Builder<T>` 契约；具体对象在其所属模块实现专用 Builder，或使用 Lombok 的 `@Builder`。
+
+责任链按 `ChainHandler.order()` 升序执行，处理器返回 `STOP` 时立即中断：
+
+```java
+ResponsibilityChain<OrderRequest> chain = ResponsibilityChain.<OrderRequest>builder()
+        .add(request -> request.isValid() ? ChainDecision.CONTINUE : ChainDecision.STOP)
+        .add(request -> reserveTicket(request))
+        .build();
+
+ChainDecision decision = chain.execute(request);
+```
+
+策略接口只定义业务标识和执行方法，选择器负责按标识执行：
+
+```java
+StrategySelector<OrderRequest, OrderResult> selector = new StrategySelector<>(
+        List.of(highSpeedStrategy, regularTrainStrategy));
+
+OrderResult result = selector.execute("high-speed", request);
+```
+
+该模块不自动扫描 Spring Bean。Spring 业务服务可以注入 `List<Strategy<OrderRequest, OrderResult>>` 或 `List<ChainHandler<T>>` 后构造选择器和责任链，从而保持公共组件框架无关。
 
 ## User Starter
 
