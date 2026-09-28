@@ -64,6 +64,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-log-spring-boot-starter</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-persistence-spring-boot-starter</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>
@@ -82,6 +87,11 @@
                 <groupId>com.alibaba</groupId>
                 <artifactId>transmittable-thread-local</artifactId>
                 <version>${transmittable-thread-local.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>

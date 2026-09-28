@@ -23,6 +23,8 @@ backend/
 │   │   └── pom.xml
 │   ├── idgenerator/
 │   │   └── pom.xml
+│   ├── log/
+│   │   └── pom.xml
 │   ├── persistence/
 │   │   └── pom.xml
 │   └── user/
@@ -42,6 +44,7 @@ frontend/
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
 - `backend/components/idgenerator`：分布式唯一 Snowflake ID 生成器、节点分配策略和 ID 解析工具。
+- `backend/components/log`：基于 `@ILog` 和 Spring AOP 的方法入参、返回值与耗时日志。
 - `backend/components/persistence`：MyBatis-Plus 分页、基础持久化对象、字段自动填充和统一主键生成。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
 - `backend/services`：后续按业务服务名称增加独立微服务模块。
@@ -98,6 +101,37 @@ SnowflakeIdGenerator snowflakeIdGenerator(WorkerNodeAssigner workerNodeAssigner)
 ```
 
 实现会为 Redis 租约 owner 附加随机 UUID，因此不会仅依赖重复的主机名判定实例唯一性。持久层 Starter 会在容器存在 `WorkerNodeAssigner` 时，将这个 `SnowflakeIdGenerator` 自动适配为 MyBatis-Plus 的 `IdentifierGenerator`。
+
+## Log Starter
+
+业务服务引入 `railway-log-spring-boot-starter` 后，在由 Spring 管理的 Bean 方法上添加 `@ILog`：
+
+```java
+@ILog("查询车次")
+public TrainDTO queryTrain(String trainNumber) {
+    return trainService.query(trainNumber);
+}
+```
+
+切面会在一条成功日志中记录操作描述、`类名#方法名`、入参 JSON、返回值 JSON 和执行耗时；方法抛出异常时记录入参、耗时和异常堆栈，然后原样抛出异常。密码、Token 等敏感接口应关闭相应内容：
+
+```java
+@ILog(value = "用户登录", recordArgs = false, recordResult = false)
+public LoginResponse login(LoginRequest request) {
+    return loginService.login(request);
+}
+```
+
+全局配置：
+
+```yaml
+railway:
+  log:
+    enabled: true
+    max-content-length: 4096
+```
+
+该组件基于 Spring 代理，只拦截从 Bean 外部进入代理对象的调用；同一个 Bean 内通过 `this` 发起的自调用不会触发 `@ILog`。超长参数和结果会按 `max-content-length` 截断，JSON 格式化失败会回退为普通字符串，不影响业务方法执行。
 
 ## Persistence Starter
 
