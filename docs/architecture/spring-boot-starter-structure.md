@@ -15,12 +15,17 @@
 ```text
 backend/components/
 ├── pom.xml
-└── base/
+├── base/
+│   ├── pom.xml
+│   └── src/
+└── convention/
     ├── pom.xml
     └── src/
 ```
 
-当前已经创建 `base` Starter。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base` Starter 和纯 Java 的 `convention` 规约组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+
+`convention` 只提供错误码、异常、分页和响应契约，不包含自动配置，因此 artifactId 使用 `railway-convention`，不使用 `spring-boot-starter` 后缀。它不依赖 Web、Spring 或 MyBatis-Plus；业务服务负责在边界层完成框架对象与规约对象之间的转换。
 
 ## 3. 总 POM
 
