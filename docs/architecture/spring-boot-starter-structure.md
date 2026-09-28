@@ -18,6 +18,9 @@ backend/components/
 ├── base/
 │   ├── pom.xml
 │   └── src/
+├── cache/
+│   ├── pom.xml
+│   └── src/
 ├── common/
 │   ├── pom.xml
 │   └── src/
@@ -44,7 +47,7 @@ backend/components/
     └── src/
 ```
 
-当前已经创建 `base`、`log`、`persistence`、`user` 与 `web` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base`、`cache`、`log`、`persistence`、`user` 与 `web` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `common` 是普通 JAR，artifactId 为 `railway-common`，依赖 `convention` 提供一致的客户端参数异常，并提供：
 
@@ -78,6 +81,8 @@ backend/components/
 
 组件以 optional 方式编译 Spring Boot 自动配置和 Spring Data Redis API，不会向依赖它的业务服务传递 Redis Starter。业务服务需要 Redis 节点分配时，必须直接引入 `spring-boot-starter-data-redis` 并配置 Redis；容器中存在 `StringRedisTemplate` 时，组件自动创建 `RedisWorkerNodeAssigner`，用户自行声明 `WorkerNodeAssigner` 时则退让。自动配置不依赖 `spring.data.redis.host`，因此同样兼容 URL、Sentinel、Cluster 或自定义连接工厂。未来部署到独立机房 Redis 时，可由新的策略计算 `nodeId = (datacenterId << 5) | workerId`，但 Snowflake 核心仍只处理 `nodeId`。系统时间发生回拨时，生成器同样会拒绝发号，生产环境应启用可靠的时间同步。
 
+`cache` Starter 通过 Spring Boot 的 `spring.data.redis.*` 建立连接，使用 `StringRedisTemplate` 保存 Fastjson2 JSON，并使用 Redisson 实现共享布隆过滤器和分布式锁。`DistributedCache` 提供基础读写删、缓存回源、安全读写、Lua 多 Key 原子占位、存在数量统计及底层客户端访问；`RedisKeyBuilder` 统一普通 Key 和 Redis Cluster hash tag Key 的格式。布隆过滤器需要预热已有合法 Key，新数据通过 `safePut` 同步写入缓存和过滤器。
+
 `log` Starter 提供方法级 `@ILog` 注解、`ILogAspect` 和 `LogAutoConfiguration`。切面通过 Spring AOP 环绕通知记录方法参数、返回值、执行耗时和异常；参数与返回值使用 Fastjson2 格式化，并受 `railway.log.max-content-length` 限制。敏感方法可通过注解关闭参数或返回值记录，整个组件可通过 `railway.log.enabled=false` 关闭。
 
 `persistence` Starter 提供 MySQL 分页拦截器、`BaseDO`、元数据自动填充、分页对象转换和 MyBatis-Plus 雪花 ID 适配。它复用 `convention` 分页契约和 `idgenerator` 发号能力，不重复实现雪花算法。
@@ -104,11 +109,16 @@ TransmittableThreadLocal 解决的是线程池复用时普通 `InheritableThread
 <packaging>pom</packaging>
 
 <modules>
-    <module>web</module>
+    <module>base</module>
+    <module>cache</module>
+    <module>common</module>
+    <module>convention</module>
+    <module>designpattern</module>
+    <module>idgenerator</module>
+    <module>log</module>
     <module>persistence</module>
-    <module>redis</module>
-    <module>security</module>
-    <module>observability</module>
+    <module>user</module>
+    <module>web</module>
 </modules>
 ```
 
@@ -125,29 +135,30 @@ Spring Boot、第三方库和组件自身的版本不写在这里，统一写入
 
 ## 4. 后续新增单个组件时
 
-简单组件不强制拆成三个 Maven 模块。以未来可能增加的 `redis` 为例，它自身就是完整的 Starter；下面只是后续结构约定，不在当前阶段创建：
+简单组件不强制拆成三个 Maven 模块。当前 `cache` 自身就是完整的 Starter，其目录结构如下：
 
 ```text
-redis/
+cache/
 ├── pom.xml
 └── src/
-    ├── main/java/com/example/components/redis/
-    │   ├── api/
-    │   ├── autoconfigure/
-    │   │   ├── RedisComponentAutoConfiguration.java
-    │   │   └── RedisComponentProperties.java
-    │   └── support/
+    ├── main/java/com/lzj/railway/framework/starter/cache/
+    │   ├── config/
+    │   │   ├── CacheAutoConfiguration.java
+    │   │   └── CacheProperties.java
+    │   ├── key/
+    │   │   └── RedisKeyBuilder.java
+    │   ├── DistributedCache.java
+    │   └── RedisDistributedCache.java
     ├── main/resources/META-INF/spring/
     │   └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
-    └── test/java/com/example/components/redis/
-        └── RedisComponentAutoConfigurationTests.java
+    └── test/java/com/lzj/railway/framework/starter/cache/
 ```
 
 推荐 Maven 坐标：
 
 ```xml
-<groupId>com.example.components</groupId>
-<artifactId>redis-spring-boot-starter</artifactId>
+<groupId>com.lzj.railway</groupId>
+<artifactId>railway-cache-spring-boot-starter</artifactId>
 ```
 
 目录名保持简短，artifactId 明确表达这是一个 Starter。
@@ -168,7 +179,7 @@ redis/
 2. 使用 `@ConditionalOnClass` 判断依赖是否存在。
 3. 使用 `@ConditionalOnMissingBean` 允许业务微服务覆盖默认实现。
 4. 在 `AutoConfiguration.imports` 中显式注册。
-5. 使用独立配置前缀，例如 `project.components.redis.*`。
+5. 使用独立配置前缀，例如 `railway.cache.*`。
 6. 使用 `ApplicationContextRunner` 测试启用、禁用、覆盖和缺少依赖场景。
 
 ## 6. 组件依赖规则
@@ -177,10 +188,9 @@ redis/
 
 ```text
 xxx-service
-├── web-spring-boot-starter
-├── persistence-spring-boot-starter
-├── redis-spring-boot-starter
-└── security-spring-boot-starter
+├── railway-cache-spring-boot-starter
+├── railway-persistence-spring-boot-starter
+└── railway-web-spring-boot-starter
 ```
 
 如果 `security` 的实现必须依赖 `web`，可以在 `security/pom.xml` 中显式依赖 web 组件，但要保持依赖方向单向并防止循环。
@@ -195,14 +205,14 @@ xxx-service
 <dependencyManagement>
     <dependencies>
         <dependency>
-            <groupId>com.example.components</groupId>
-            <artifactId>web-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.lzj.railway</groupId>
+            <artifactId>railway-web-spring-boot-starter</artifactId>
+            <version>${railway-components.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.example.components</groupId>
-            <artifactId>redis-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.lzj.railway</groupId>
+            <artifactId>railway-cache-spring-boot-starter</artifactId>
+            <version>${railway-components.version}</version>
         </dependency>
     </dependencies>
 </dependencyManagement>
@@ -219,28 +229,28 @@ dependencies BOM 不包含 Java 源码、运行时依赖或插件配置，只保
 - 核心 API 需要脱离 Spring 单独使用；
 - 各部分需要独立发布。
 
-例如 Redis 组件变复杂后，可以演进为：
+例如 Cache 组件变复杂后，可以演进为：
 
 ```text
-redis/
+cache/
 ├── pom.xml
-├── redis-core/
-├── redis-spring-boot-autoconfigure/
-└── redis-spring-boot-starter/
+├── cache-core/
+├── cache-spring-boot-autoconfigure/
+└── cache-spring-boot-starter/
 ```
 
-这时 `redis/pom.xml` 聚合该组件的子模块，而 `components/pom.xml` 仍然只聚合 `redis`。复杂性被限制在组件自己的目录内。
+这时 `cache/pom.xml` 聚合该组件的子模块，而 `components/pom.xml` 仍然只聚合 `cache`。复杂性被限制在组件自己的目录内。
 
 ## 9. 命名约定
 
 | 位置 | 示例 |
 | --- | --- |
-| 目录 | `redis` |
-| artifactId | `redis-spring-boot-starter` |
-| Java 包 | `com.example.components.redis` |
-| 配置前缀 | `project.components.redis` |
-| 自动配置类 | `RedisComponentAutoConfiguration` |
-| 测试类 | `RedisComponentAutoConfigurationTests` |
+| 目录 | `cache` |
+| artifactId | `railway-cache-spring-boot-starter` |
+| Java 包 | `com.lzj.railway.framework.starter.cache` |
+| 配置前缀 | `railway.cache` |
+| 自动配置类 | `CacheAutoConfiguration` |
+| 测试类 | `CacheAutoConfigurationTest` |
 
 第三方 Starter 不使用 `spring-boot-*` 作为 artifactId 前缀，避免与 Spring 官方模块混淆。
 

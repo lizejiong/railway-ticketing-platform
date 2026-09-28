@@ -44,6 +44,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-cache-spring-boot-starter</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-common</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>
@@ -97,6 +102,11 @@
                 <groupId>com.alibaba.fastjson2</groupId>
                 <artifactId>fastjson2</artifactId>
                 <version>${fastjson2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson-spring-boot-starter</artifactId>
+                <version>${redisson.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>

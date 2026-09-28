@@ -15,6 +15,8 @@ backend/
 │   ├── pom.xml
 │   ├── base/
 │   │   └── pom.xml
+│   ├── cache/
+│   │   └── pom.xml
 │   ├── common/
 │   │   └── pom.xml
 │   ├── convention/
@@ -42,6 +44,7 @@ frontend/
 - `backend/parent/pom.xml`：统一管理 Java、编码和 Maven 插件等构建约定，并导入 dependencies BOM。
 - `backend/components/pom.xml`：聚合逐个增加的后端组件与 Spring Boot Starter。
 - `backend/components/base`：基础常量、单例容器、启动事件和基础自动配置。
+- `backend/components/cache`：Redis JSON 缓存、Key 规范、缓存回源、防穿透和防击穿。
 - `backend/components/common`：通用码值枚举、断言、对象复制、环境和线程工具。
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
@@ -104,6 +107,75 @@ SnowflakeIdGenerator snowflakeIdGenerator(WorkerNodeAssigner workerNodeAssigner)
 ```
 
 实现会为 Redis 租约 owner 附加随机 UUID，因此不会仅依赖重复的主机名判定实例唯一性。持久层 Starter 会在容器存在 `WorkerNodeAssigner` 时，将这个 `SnowflakeIdGenerator` 自动适配为 MyBatis-Plus 的 `IdentifierGenerator`。
+
+## Cache Starter
+
+业务服务引入 `railway-cache-spring-boot-starter` 后，会同时获得 Spring Data Redis、Redisson 和 `DistributedCache` 自动配置：
+
+```xml
+<dependency>
+    <groupId>com.lzj.railway</groupId>
+    <artifactId>railway-cache-spring-boot-starter</artifactId>
+</dependency>
+```
+
+连接沿用 Spring Boot 配置，组件只增加缓存命名配置：
+
+```yaml
+spring:
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+railway:
+  cache:
+    key-prefix: railway
+    lock-key-prefix: railway:cache:lock:
+    bloom:
+      name: railway:cache:bloom
+      expected-insertions: 1000000
+      false-positive-probability: 0.01
+```
+
+普通缓存回源在未命中时执行传入的 lambda，非空结果按 TTL 写回：
+
+```java
+String key = keyBuilder.build("train", trainNumber);
+TrainDTO train = distributedCache.getOrLoad(
+        key,
+        TrainDTO.class,
+        () -> trainMapper.selectByTrainNumber(trainNumber),
+        Duration.ofMinutes(10)
+);
+```
+
+`safeGet` 在普通回源之外增加布隆过滤器和 Redisson 分布式锁，并在获得锁后再次读取缓存；`safePut` 严格先写缓存，再登记布隆过滤器：
+
+```java
+distributedCache.safePut(key, train, Duration.ofMinutes(10));
+TrainDTO cached = distributedCache.safeGet(
+        key,
+        TrainDTO.class,
+        () -> trainMapper.selectByTrainNumber(trainNumber),
+        Duration.ofMinutes(10)
+);
+```
+
+布隆过滤器必须在上线或数据迁移时用已有合法 Key 预热，新数据应通过 `safePut` 写入；否则 `safeGet` 会认为 Key 不存在并跳过数据库。布隆过滤器存在误判，因此它只能避免大部分无效回源，不能替代数据库约束。
+
+多 Key 原子占位由 Lua 完成。参与同一次操作的 Key 必须使用相同 hash tag，以满足 Redis Cluster 同槽要求：
+
+```java
+String first = keyBuilder.buildWithHashTag("seat", trainNumber, "carriage-1", "1A");
+String second = keyBuilder.buildWithHashTag("seat", trainNumber, "carriage-1", "1B");
+boolean occupied = distributedCache.putIfAllAbsent(
+        Map.of(first, orderId, second, orderId),
+        Duration.ofMinutes(5)
+);
+```
+
+只要其中一个 Key 已存在，本次 Lua 调用就不会写入任何 Key。`countExistingKeys` 可统计一组 Key 中已存在的数量；确实需要组件未覆盖的 Redis 能力时，可通过 `getRedisTemplate()` 或 `getRedissonClient()` 获取底层客户端。
 
 ## Log Starter
 
