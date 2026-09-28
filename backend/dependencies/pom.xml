@@ -64,6 +64,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-persistence-spring-boot-starter</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-user-spring-boot-starter</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>
@@ -77,6 +82,16 @@
                 <groupId>com.alibaba</groupId>
                 <artifactId>transmittable-thread-local</artifactId>
                 <version>${transmittable-thread-local.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis-spring</artifactId>
+                <version>${mybatis-spring-boot-starter.version}</version>
             </dependency>
             <dependency>
                 <groupId>javax.xml.bind</groupId>

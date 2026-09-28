@@ -23,6 +23,7 @@
         <module>convention</module>
         <module>designpattern</module>
         <module>idgenerator</module>
+        <module>persistence</module>
         <module>user</module>
     </modules>
 </project>

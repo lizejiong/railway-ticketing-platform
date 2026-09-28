@@ -36,6 +36,8 @@
 │   │   │   └── pom.xml
 │   │   ├── idgenerator/
 │   │   │   └── pom.xml
+│   │   ├── persistence/
+│   │   │   └── pom.xml
 │   │   └── user/
 │   │       └── pom.xml
 │   └── services/
@@ -114,6 +116,8 @@ backend/pom.xml
 当前 `user` Starter 单向依赖 `base`，复用用户字段和过滤器顺序常量；业务服务依赖 `user`，组件不反向依赖任何业务服务。
 
 `designpattern` 是不依赖 Spring 的纯 Java 模块，提供构建者、责任链和策略选择器。业务服务负责按自身泛型类型组装处理器和策略实现，避免公共组件通过原始类型扫描全部 Bean 而失去编译期类型检查。
+
+`persistence` 是 MyBatis-Plus Starter，依赖 `convention` 的分页契约和 `idgenerator` 的统一雪花算法。它提供 MySQL 分页插件、`BaseDO`、元数据自动填充、分页转换工具，并在存在工作节点分配器时替换 MyBatis-Plus 主键生成器。
 
 `backend/services/xxx-service` 后续会成为可运行的 Spring Boot 应用。它按需依赖具体组件，但组件库绝不能反向依赖微服务。
 

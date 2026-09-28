@@ -1,6 +1,6 @@
 # Railway Platform
 
-这是一个逐步建设的前后端 Monorepo。目前已建立后端 Maven 多模块结构、`base`、`convention`、`designpattern` 和 `user` 组件，业务服务与前端工程将继续按模块演进。
+这是一个逐步建设的前后端 Monorepo。目前已建立后端 Maven 多模块结构和基础组件库，业务服务与前端工程将继续按模块演进。
 
 ## 当前结构
 
@@ -23,6 +23,8 @@ backend/
 │   │   └── pom.xml
 │   ├── idgenerator/
 │   │   └── pom.xml
+│   ├── persistence/
+│   │   └── pom.xml
 │   └── user/
 │       └── pom.xml
 └── services/
@@ -40,6 +42,7 @@ frontend/
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
 - `backend/components/idgenerator`：分布式唯一 Snowflake ID 生成器、节点分配策略和 ID 解析工具。
+- `backend/components/persistence`：MyBatis-Plus 分页、基础持久化对象、字段自动填充和统一主键生成。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
 - `backend/services`：后续按业务服务名称增加独立微服务模块。
 - `frontend/web`：仅保留前端项目边界，开发范式后续确认。
@@ -94,7 +97,50 @@ SnowflakeIdGenerator snowflakeIdGenerator(WorkerNodeAssigner workerNodeAssigner)
 }
 ```
 
-实现会为 Redis 租约 owner 附加随机 UUID，因此不会仅依赖重复的主机名判定实例唯一性。后续持久化组件接入 MyBatis-Plus 时，可将这个 `SnowflakeIdGenerator` 适配为 `IdentifierGenerator`。
+实现会为 Redis 租约 owner 附加随机 UUID，因此不会仅依赖重复的主机名判定实例唯一性。持久层 Starter 会在容器存在 `WorkerNodeAssigner` 时，将这个 `SnowflakeIdGenerator` 自动适配为 MyBatis-Plus 的 `IdentifierGenerator`。
+
+## Persistence Starter
+
+业务服务引入 `railway-persistence-spring-boot-starter` 后，会得到 MySQL 分页插件和基础字段自动填充能力：
+
+```xml
+<dependency>
+    <groupId>com.lzj.railway</groupId>
+    <artifactId>railway-persistence-spring-boot-starter</artifactId>
+</dependency>
+```
+
+数据库实体继承 `BaseDO`，只定义自己的主键和业务字段：
+
+```java
+@TableName("t_train")
+public class TrainDO extends BaseDO {
+
+    @TableId(type = IdType.ASSIGN_ID)
+    private Long id;
+
+    private String trainNumber;
+}
+```
+
+`createTime`、`updateTime` 和 `deleted` 由 `PersistenceMetaObjectHandler` 维护。分页查询时，使用 `PageUtil` 隔离接口规约与 ORM 类型：
+
+```java
+Page<TrainDO> queryPage = PageUtil.convert(request);
+IPage<TrainDO> result = trainMapper.selectPage(queryPage, queryWrapper);
+PageResponse<TrainDTO> response = PageUtil.convert(result, this::toDTO);
+```
+
+生产环境引入 Redis Starter 并正常配置 `spring.data.redis` 后，ID 组件会创建 Redis 节点分配器，持久层 Starter 随即替换 MyBatis-Plus 默认 ID 生成器。无需 Redis 的单机或测试环境可显式提供固定节点：
+
+```java
+@Bean
+WorkerNodeAssigner workerNodeAssigner() {
+    return new FixedWorkerNodeAssigner(1);
+}
+```
+
+如果业务没有提供任何 `WorkerNodeAssigner`，持久层 Starter 不接管 `IdentifierGenerator`，MyBatis-Plus 保持其默认行为。业务自定义 `MybatisPlusInterceptor`、`MetaObjectHandler` 或 `IdentifierGenerator` 时，组件的对应默认 Bean 会自动退让。
 
 ## User Starter
 
