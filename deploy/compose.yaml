@@ -1,0 +1,55 @@
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: 12306-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - type: bind
+        source: ./mysql/init/00-create-databases.sql
+        target: /docker-entrypoint-initdb.d/00-create-databases.sql
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/db/12306-springcloud-user.sql
+        target: /docker-entrypoint-initdb.d/10-user-schema.source
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/db/12306-springcloud-order.sql
+        target: /docker-entrypoint-initdb.d/20-order-schema.source
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/db/12306-springcloud-pay.sql
+        target: /docker-entrypoint-initdb.d/30-pay-schema.source
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/db/12306-springcloud-ticket.sql
+        target: /docker-entrypoint-initdb.d/40-ticket-schema.source
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/data/12306-springcloud-ticket.sql
+        target: /docker-entrypoint-initdb.d/50-ticket-data.source
+        read_only: true
+      - type: bind
+        source: ${SQL_ASSET_ROOT:?Set SQL_ASSET_ROOT in deploy/.env}/data/12306-springcloud-user.sql
+        target: /docker-entrypoint-initdb.d/60-user-data.source
+        read_only: true
+      - type: bind
+        source: ./mysql/init/90-import-provided-sql.sh
+        target: /docker-entrypoint-initdb.d/90-import-provided-sql.sh
+        read_only: true
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mysql-data:
