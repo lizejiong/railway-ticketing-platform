@@ -16,5 +16,6 @@
         <module>dependencies</module>
         <module>parent</module>
         <module>components</module>
+        <module>services</module>
     </modules>
 </project>

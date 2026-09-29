@@ -363,3 +363,15 @@ railway:
 cd backend
 ./mvnw validate
 ```
+
+## 服务模块骨架
+
+`backend/services` 已聚合以下 Spring Cloud Alibaba 服务模块：
+
+- `gateway-service`：统一入口，预置 Spring Cloud Gateway、Nacos 服务发现和配置中心依赖。
+- `user-service`：用户域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
+- `ticket-service`：票务域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
+- `order-service`：订单域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
+- `pay-service`：支付域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
+
+当前阶段只建立 Maven 模块边界和统一依赖版本，不包含 Java 源码、应用配置、Nacos 地址、网关路由或任何业务接口。后续按服务逐个实现。
