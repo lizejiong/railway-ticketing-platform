@@ -33,6 +33,9 @@ backend/components/
 ├── idgenerator/
 │   ├── pom.xml
 │   └── src/
+├── idempotent/
+│   ├── pom.xml
+│   └── src/
 ├── log/
 │   ├── pom.xml
 │   └── src/
@@ -47,7 +50,7 @@ backend/components/
     └── src/
 ```
 
-当前已经创建 `base`、`cache`、`log`、`persistence`、`user` 与 `web` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
+当前已经创建 `base`、`cache`、`idempotent`、`log`、`persistence`、`user` 与 `web` Starter，以及 `common`、纯 Java 的 `convention`、`designpattern` 与 `idgenerator` 组件。后续确定要开发其他组件时，再新增对应目录、POM、源码与测试，并把它加入总 POM。
 
 `common` 是普通 JAR，artifactId 为 `railway-common`，依赖 `convention` 提供一致的客户端参数异常，并提供：
 
@@ -83,6 +86,8 @@ backend/components/
 
 `cache` Starter 通过 Spring Boot 的 `spring.data.redis.*` 建立连接，使用 `StringRedisTemplate` 保存 Fastjson2 JSON，并使用 Redisson 实现共享布隆过滤器和分布式锁。`DistributedCache` 提供基础读写删、缓存回源、安全读写、Lua 多 Key 原子占位、存在数量统计及底层客户端访问；`RedisKeyBuilder` 统一普通 Key 和 Redis Cluster hash tag Key 的格式。布隆过滤器需要预热已有合法 Key，新数据通过 `safePut` 同步写入缓存和过滤器。
 
+`idempotent` Starter 依赖 `cache` 提供的 Redis 客户端。`IdempotentAspect` 根据 `scene` 将调用路由到 REST 或 MQ 执行器，并根据 `type` 使用 HTTP Token、全部参数摘要或 SpEL 结果生成业务 Key。底层统一使用带 TTL 和唯一执行令牌的 `PROCESSING/COMPLETED` 状态；完成和失败释放均通过 Lua 原子校验令牌，防止过期请求修改新持有者的状态。REST 重复请求抛出 `ClientException`，MQ 重复消息跳过方法；该能力不承诺 exactly-once。
+
 `log` Starter 提供方法级 `@ILog` 注解、`ILogAspect` 和 `LogAutoConfiguration`。切面通过 Spring AOP 环绕通知记录方法参数、返回值、执行耗时和异常；参数与返回值使用 Fastjson2 格式化，并受 `railway.log.max-content-length` 限制。敏感方法可通过注解关闭参数或返回值记录，整个组件可通过 `railway.log.enabled=false` 关闭。
 
 `persistence` Starter 提供 MySQL 分页拦截器、`BaseDO`、元数据自动填充、分页对象转换和 MyBatis-Plus 雪花 ID 适配。它复用 `convention` 分页契约和 `idgenerator` 发号能力，不重复实现雪花算法。
@@ -115,6 +120,7 @@ TransmittableThreadLocal 解决的是线程池复用时普通 `InheritableThread
     <module>convention</module>
     <module>designpattern</module>
     <module>idgenerator</module>
+    <module>idempotent</module>
     <module>log</module>
     <module>persistence</module>
     <module>user</module>

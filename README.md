@@ -25,6 +25,8 @@ backend/
 │   │   └── pom.xml
 │   ├── idgenerator/
 │   │   └── pom.xml
+│   ├── idempotent/
+│   │   └── pom.xml
 │   ├── log/
 │   │   └── pom.xml
 │   ├── persistence/
@@ -49,6 +51,7 @@ frontend/
 - `backend/components/convention`：错误码、异常、分页和公共响应契约，不依赖 Web 或 ORM。
 - `backend/components/designpattern`：框架无关的构建者、责任链和策略模式实现。
 - `backend/components/idgenerator`：分布式唯一 Snowflake ID 生成器、节点分配策略和 ID 解析工具。
+- `backend/components/idempotent`：基于 Redis、Redisson 和 `@Idempotent` 的 REST/MQ 幂等控制。
 - `backend/components/log`：基于 `@ILog` 和 Spring AOP 的方法入参、返回值与耗时日志。
 - `backend/components/persistence`：MyBatis-Plus 分页、基础持久化对象、字段自动填充和统一主键生成。
 - `backend/components/user`：JWT 登录凭证、TTL 用户上下文和请求 Token 过滤器。
@@ -176,6 +179,71 @@ boolean occupied = distributedCache.putIfAllAbsent(
 ```
 
 只要其中一个 Key 已存在，本次 Lua 调用就不会写入任何 Key。`countExistingKeys` 可统计一组 Key 中已存在的数量；确实需要组件未覆盖的 Redis 能力时，可通过 `getRedisTemplate()` 或 `getRedissonClient()` 获取底层客户端。
+
+## Idempotent Starter
+
+业务服务引入 `railway-idempotent-spring-boot-starter` 并正常配置 Redis 后，在 Spring Bean 的业务方法上添加 `@Idempotent` 即可：
+
+```xml
+<dependency>
+    <groupId>com.lzj.railway</groupId>
+    <artifactId>railway-idempotent-spring-boot-starter</artifactId>
+</dependency>
+```
+
+REST API 可以通过 SpEL 提取订单号等业务唯一字段，在 TTL 窗口内拒绝重复提交：
+
+```java
+@Idempotent(
+        type = IdempotentType.SPEL,
+        key = "#request.orderId",
+        uniqueKeyPrefix = "order:submit",
+        keyTimeout = 10,
+        timeUnit = TimeUnit.MINUTES
+)
+public void submitOrder(OrderCreateRequest request) {
+    orderService.create(request);
+}
+```
+
+客户端能够生成请求唯一 Token 时，也可以选择 `TOKEN`。组件默认读取 `Idempotency-Key` 请求头：
+
+```java
+@Idempotent(type = IdempotentType.TOKEN, uniqueKeyPrefix = "passenger:create")
+public void createPassenger(PassengerCreateRequest request) {
+    passengerService.create(request);
+}
+```
+
+MQ 消费应使用业务事件 ID，而不是 HTTP Token；发现重复消息时直接跳过业务方法，因此消费方法应返回 `void`：
+
+```java
+@Idempotent(
+        scene = IdempotentScene.MQ,
+        type = IdempotentType.SPEL,
+        key = "#message.eventId",
+        uniqueKeyPrefix = "order:created"
+)
+public void consume(OrderCreatedMessage message) {
+    ticketService.handle(message);
+}
+```
+
+`type` 决定如何识别同一次业务调用：`TOKEN` 读取 HTTP 请求头，`PARAM` 对全部方法参数 JSON 计算 SHA-256，`SPEL` 根据 `key` 表达式提取业务字段。`scene` 决定重复后的行为：REST 抛出 `ClientException`，MQ 跳过方法。底层统一使用 Redis `PROCESSING:<UUID>/COMPLETED` 状态；完成和失败清理都通过 Lua 校验执行令牌，旧请求不能覆盖或删除后来请求的状态。
+
+完整 Redis Key 格式为 `全局前缀:场景:业务前缀:唯一值`。未设置 `uniqueKeyPrefix` 时使用方法签名摘要作为业务前缀；`keyTimeout` 默认 1 小时，业务异常时释放自己的标记，成功后从完成时刻重新计算 TTL。
+
+可选全局配置包括开关、Key 前缀和 TOKEN 请求头名称：
+
+```yaml
+railway:
+  idempotent:
+    enabled: true
+    key-prefix: railway:idempotent
+    token-header: Idempotency-Key
+```
+
+该组件降低重复执行概率，不保证分布式系统的严格 exactly-once。数据库唯一索引、业务状态机和事务消息仍应作为最终一致性保障；同一个 Bean 内通过 `this` 发起的自调用也不会触发 Spring AOP。
 
 ## Log Starter
 

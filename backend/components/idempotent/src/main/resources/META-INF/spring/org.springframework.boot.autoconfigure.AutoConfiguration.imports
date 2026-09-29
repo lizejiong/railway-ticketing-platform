@@ -1,0 +1,2 @@
+com.lzj.railway.framework.starter.idempotent.config.ServletIdempotentAutoConfiguration
+com.lzj.railway.framework.starter.idempotent.config.IdempotentAutoConfiguration

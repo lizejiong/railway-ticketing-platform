@@ -69,6 +69,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lzj.railway</groupId>
+                <artifactId>railway-idempotent-spring-boot-starter</artifactId>
+                <version>${railway-components.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lzj.railway</groupId>
                 <artifactId>railway-log-spring-boot-starter</artifactId>
                 <version>${railway-components.version}</version>
             </dependency>
