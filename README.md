@@ -375,3 +375,17 @@ cd backend
 - `pay-service`：支付域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 
 当前阶段只建立 Maven 模块边界和统一依赖版本，不包含 Java 源码、应用配置、Nacos 地址、网关路由或任何业务接口。后续按服务逐个实现。
+
+## Nacos 本地开发环境
+
+Nacos 用作 Spring Cloud Alibaba 的服务注册与配置中心。复制本地环境变量后，只启动 Nacos：
+
+```powershell
+Copy-Item deploy/.env.example deploy/.env
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d nacos
+docker compose --env-file deploy/.env -f deploy/compose.yaml ps nacos
+```
+
+控制台地址为 `http://localhost:8848/nacos`，本地开发的默认账号为 `nacos` / `nacos`。服务端 HTTP 地址为 `localhost:8848`，Nacos 2.x gRPC 客户端端口为 `9848`。
+
+该 Compose 服务使用带持久卷的单机 Derby 存储，并已启用鉴权；只适用于本地开发。`.env.example` 中的 token 是公开的本地示例，生产环境必须替换为独立的 Base64 密钥（原文至少 32 字节）并部署 Nacos 集群与外部存储。
