@@ -4,6 +4,7 @@ import com.lzj.railway.framework.convention.result.Result;
 import com.lzj.railway.framework.starter.idempotent.annotation.Idempotent;
 import com.lzj.railway.framework.starter.web.result.Results;
 import com.lzj.railway.user.dto.request.LoginRequest;
+import com.lzj.railway.user.dto.request.RefreshTokenRequest;
 import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
@@ -36,5 +37,20 @@ public class UserAuthController {
     @Operation(summary = "账号登录", description = "支持用户名、手机号或邮箱加密码登录，并签发 Access Token 与 Refresh Token。")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return Results.success(userAuthService.login(request));
+    }
+
+    /** 使用一次性 Refresh Token 轮换一组新 Token。 */
+    @PostMapping("/token/refresh")
+    @Operation(summary = "刷新登录令牌", description = "消费旧 Refresh Token，并签发新的 Access Token 与 Refresh Token。")
+    public Result<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return Results.success(userAuthService.refresh(request));
+    }
+
+    /** 撤销 Refresh Token 会话，结束可续期的登录状态。 */
+    @PostMapping("/logout")
+    @Operation(summary = "退出登录", description = "撤销 Refresh Token；已签发的 Access Token 按短有效期自然失效。")
+    public Result<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        userAuthService.logout(request);
+        return Results.success();
     }
 }

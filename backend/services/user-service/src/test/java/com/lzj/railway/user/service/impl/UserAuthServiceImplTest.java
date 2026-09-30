@@ -8,10 +8,12 @@ import com.lzj.railway.user.dao.mapper.UserMailMapper;
 import com.lzj.railway.user.dao.mapper.UserMapper;
 import com.lzj.railway.user.dao.mapper.UserPhoneMapper;
 import com.lzj.railway.user.dto.request.LoginRequest;
+import com.lzj.railway.user.dto.request.RefreshTokenRequest;
 import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
 import com.lzj.railway.user.session.RefreshTokenService;
+import com.lzj.railway.user.session.RefreshSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -23,8 +25,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.concurrent.TimeUnit;
+import java.time.Instant;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -109,6 +114,48 @@ class UserAuthServiceImplTest {
         assertEquals("refresh-token", response.refreshToken());
         assertEquals(900L, response.accessTokenExpiresIn());
         assertEquals(1001L, response.user().userId());
+    }
+
+    @Test
+    void refreshesTokensByConsumingOldRefreshSession() {
+        RefreshTokenRequest request = new RefreshTokenRequest("old-refresh-token");
+        when(refreshTokenService.consume("old-refresh-token"))
+                .thenReturn(Optional.of(new RefreshSession(1001L, "railway_user", Instant.now())));
+        UserDO user = new UserDO();
+        user.setId(1001L);
+        user.setUsername("railway_user");
+        user.setRealName("张三");
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(jwtTokenGenerator.generateToken(any())).thenReturn("new-access-token");
+        when(refreshTokenService.issue(1001L, "railway_user"))
+                .thenReturn(new RefreshTokenService.IssuedRefreshToken("new-refresh-token", 2_592_000L));
+        UserAuthServiceImpl service = newService();
+
+        LoginResponse response = service.refresh(request);
+
+        assertEquals("new-access-token", response.accessToken());
+        assertEquals("new-refresh-token", response.refreshToken());
+    }
+
+    @Test
+    void rejectsInvalidRefreshToken() {
+        when(refreshTokenService.consume("invalid-refresh-token")).thenReturn(Optional.empty());
+        UserAuthServiceImpl service = newService();
+
+        var exception = assertThrows(
+                com.lzj.railway.framework.convention.exception.ClientException.class,
+                () -> service.refresh(new RefreshTokenRequest("invalid-refresh-token")));
+
+        assertEquals("U000012", exception.getErrorCode());
+    }
+
+    @Test
+    void logoutRevokesRefreshToken() {
+        UserAuthServiceImpl service = newService();
+
+        service.logout(new RefreshTokenRequest("refresh-token"));
+
+        verify(refreshTokenService).revoke("refresh-token");
     }
 
     private UserAuthServiceImpl newService() {

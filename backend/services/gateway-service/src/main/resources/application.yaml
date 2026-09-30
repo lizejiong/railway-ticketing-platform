@@ -1,0 +1,16 @@
+spring:
+  config:
+    # 网关端口、路由和 JWT 参数统一由 Nacos 的 gateway-service.yaml 提供。
+    import:
+      - nacos:gateway-service.yaml?group=${NACOS_GROUP:DEFAULT_GROUP}
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}

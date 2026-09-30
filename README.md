@@ -1,5 +1,21 @@
 # Railway Platform
 
+## 用户账号核心接口
+
+所有客户端请求统一从网关 `http://127.0.0.1:8080` 进入。注册、登录、刷新令牌和退出登录为公开接口；用户资料与乘车人接口必须携带 `Authorization: Bearer <access-token>`。
+
+- `POST /api/user/register`：注册账号。
+- `POST /api/user/login`：登录并获得 Access Token 与 Refresh Token。
+- `POST /api/user/token/refresh`：消费旧 Refresh Token，轮换得到一组新 Token。
+- `POST /api/user/logout`：撤销 Refresh Token；已签发的短期 Access Token 到期后自然失效。
+- `GET /api/user/profile`：查询当前登录用户的脱敏资料。
+- `GET /api/user/passengers`：查询当前用户的乘车人列表。
+- `POST /api/user/passengers`：新增乘车人。
+- `PUT /api/user/passengers/{passengerId}`：修改当前用户拥有的乘车人。
+- `DELETE /api/user/passengers/{passengerId}`：软删除当前用户拥有的乘车人。
+
+Refresh Token 原文只返回给客户端，Redis 中仅保存其 SHA-256 哈希及会话元数据。乘车人查询、修改和删除始终携带当前用户名作为分片键；证件号和手机号由 ShardingSphere AES 加密落库，对外响应只返回脱敏值。
+
 ## User Service：注册与登录（第一阶段）
 
 `user-service` 现在监听 `8081`，已实现以下端点：
@@ -361,7 +377,7 @@ WorkerNodeAssigner workerNodeAssigner() {
 railway:
   user:
     jwt:
-      secret: ${RAILWAY_USER_JWT_SECRET}
+      secret: ${USER_JWT_SECRET}
       expiration: 2h
       issuer: railway-platform
       header-name: Authorization
@@ -383,13 +399,27 @@ cd backend
 
 `backend/services` 已聚合以下 Spring Cloud Alibaba 服务模块：
 
-- `gateway-service`：统一入口，预置 Spring Cloud Gateway、Nacos 服务发现和配置中心依赖。
+- `gateway-service`：统一入口，通过 Nacos 路由到业务服务，并在路由层校验 JWT。
 - `user-service`：用户域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 - `ticket-service`：票务域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 - `order-service`：订单域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 - `pay-service`：支付域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 
-当前阶段只建立 Maven 模块边界和统一依赖版本，不包含 Java 源码、应用配置、Nacos 地址、网关路由或任何业务接口。后续按服务逐个实现。
+当前已实现用户服务注册、登录以及用户域网关路由；票务、订单和支付服务仍只保留模块骨架，后续按服务逐个实现。
+
+## API Gateway
+
+`gateway-service` 默认监听 `8080`，通过 Nacos 将 `/api/user/**` 原样转发到 `user-service`，不需要 `StripPrefix` 或其他路径改写。
+
+以下请求不要求登录：
+
+- `POST /api/user/register`
+- `POST /api/user/login`
+- 浏览器发起的 `OPTIONS` 预检请求
+
+其余用户域路径需要携带有效的 `Authorization: Bearer <access-token>`。网关和用户服务复用同一份 `railway.user.jwt` 签名配置；网关只校验并转发原始 Token，不注入 `userId`、`username` 等身份请求头，也不查询 Redis 会话或 Token 黑名单。
+
+网关本地配置只负责导入 Nacos 的 `gateway-service.yaml`。端口、路由、公开路径和 JWT 参数均在 Nacos 中维护；JWT 密钥通过 `USER_JWT_SECRET` 环境变量注入，生产环境不得使用本地默认值。
 
 ## Nacos 本地开发环境
 
@@ -402,6 +432,12 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml ps nacos
 ```
 
 控制台地址为 `http://localhost:8848/nacos`，本地开发的默认账号为 `nacos` / `nacos`。服务端 HTTP 地址为 `localhost:8848`，Nacos 2.x gRPC 客户端端口为 `9848`。
+
+Windows 命令行启动服务时需确保 JVM 使用 UTF-8，否则当前 Spring Cloud Alibaba 版本解析带中文注释的 Nacos YAML 可能抛出 `MalformedInputException`：
+
+```powershell
+$env:JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8'
+```
 
 该 Compose 服务使用带持久卷的单机 Derby 存储，并已启用鉴权；只适用于本地开发。`.env.example` 中的 token 是公开的本地示例，生产环境必须替换为独立的 Base64 密钥（原文至少 32 字节）并部署 Nacos 集群与外部存储。
 
