@@ -1,5 +1,21 @@
 # Railway Platform
 
+## 用户账号核心接口
+
+所有客户端请求统一从网关 `http://127.0.0.1:8080` 进入。注册、登录、刷新令牌和退出登录为公开接口；用户资料与乘车人接口必须携带 `Authorization: Bearer <access-token>`。
+
+- `POST /api/user/register`：注册账号。
+- `POST /api/user/login`：登录并获得 Access Token 与 Refresh Token。
+- `POST /api/user/token/refresh`：消费旧 Refresh Token，轮换得到一组新 Token。
+- `POST /api/user/logout`：撤销 Refresh Token；已签发的短期 Access Token 到期后自然失效。
+- `GET /api/user/profile`：查询当前登录用户的脱敏资料。
+- `GET /api/user/passengers`：查询当前用户的乘车人列表。
+- `POST /api/user/passengers`：新增乘车人。
+- `PUT /api/user/passengers/{passengerId}`：修改当前用户拥有的乘车人。
+- `DELETE /api/user/passengers/{passengerId}`：软删除当前用户拥有的乘车人。
+
+Refresh Token 原文只返回给客户端，Redis 中仅保存其 SHA-256 哈希及会话元数据。乘车人查询、修改和删除始终携带当前用户名作为分片键；证件号和手机号由 ShardingSphere AES 加密落库，对外响应只返回脱敏值。
+
 ## User Service：注册与登录（第一阶段）
 
 `user-service` 现在监听 `8081`，已实现以下端点：

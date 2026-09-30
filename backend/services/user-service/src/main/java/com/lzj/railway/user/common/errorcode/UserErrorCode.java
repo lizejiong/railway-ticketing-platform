@@ -14,7 +14,10 @@ public enum UserErrorCode implements ErrorCode {
     VERIFICATION_CODE_INVALID("U000007", "验证码错误"),
     ACCOUNT_FROZEN("U000008", "账号已冻结"),
     PASSENGER_NOT_FOUND("U000009", "乘车人不存在"),
-    PASSENGER_ACCESS_DENIED("U000010", "无权操作该乘车人");
+    PASSENGER_ACCESS_DENIED("U000010", "无权操作该乘车人"),
+    AUTHENTICATION_REQUIRED("U000011", "请先登录"),
+    REFRESH_TOKEN_INVALID("U000012", "Refresh Token 无效或已过期"),
+    PASSENGER_ALREADY_EXISTS("U000013", "该乘车人已存在");
 
     private final String code;
     private final String message;

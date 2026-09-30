@@ -12,6 +12,7 @@ import com.lzj.railway.user.dao.mapper.UserMailMapper;
 import com.lzj.railway.user.dao.mapper.UserMapper;
 import com.lzj.railway.user.dao.mapper.UserPhoneMapper;
 import com.lzj.railway.user.dto.request.LoginRequest;
+import com.lzj.railway.user.dto.request.RefreshTokenRequest;
 import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
@@ -101,12 +102,36 @@ public class UserAuthServiceImpl implements UserAuthService {
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new ClientException(UserErrorCode.PASSWORD_INCORRECT);
         }
+        return issueTokens(user);
+    }
+
+    /** 消费旧 Refresh Token，并为仍然有效的用户轮换一组新 Token。 */
+    @Override
+    public LoginResponse refresh(RefreshTokenRequest request) {
+        String username = refreshTokenService.consume(request.refreshToken())
+                .orElseThrow(() -> new ClientException(UserErrorCode.REFRESH_TOKEN_INVALID))
+                .username();
+        UserDO user = findUserByUsername(username);
+        if (user == null) {
+            throw new ClientException(UserErrorCode.ACCOUNT_NOT_FOUND);
+        }
+        return issueTokens(user);
+    }
+
+    /** 撤销 Refresh Token 会话；Access Token 按其短有效期自然失效。 */
+    @Override
+    public void logout(RefreshTokenRequest request) {
+        refreshTokenService.revoke(request.refreshToken());
+    }
+
+    /** 为已认证用户签发 Access Token 和不透明 Refresh Token。 */
+    private LoginResponse issueTokens(UserDO user) {
         String accessToken = jwtTokenGenerator.generateToken(UserInfoDTO.builder()
                 .userId(String.valueOf(user.getId()))
                 .username(user.getUsername())
                 .realName(user.getRealName())
                 .build());
-        // Refresh Token 是随机不透明值；原始值只返回一次，Redis 内仅保留其哈希对应的会话。
+        // Refresh Token 原始值只返回一次，Redis 内仅保留其哈希对应的会话。
         RefreshTokenService.IssuedRefreshToken refreshToken = refreshTokenService.issue(user.getId(), user.getUsername());
         return new LoginResponse(accessToken, refreshToken.token(), ACCESS_TOKEN_EXPIRES_IN_SECONDS,
                 new LoginResponse.UserSummary(user.getId(), user.getUsername(), user.getRealName()));

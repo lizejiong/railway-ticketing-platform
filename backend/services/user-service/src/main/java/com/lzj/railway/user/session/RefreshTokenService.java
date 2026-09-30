@@ -11,7 +11,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import org.springframework.util.StringUtils;
 
 @Service
 public class RefreshTokenService {
@@ -38,8 +40,7 @@ public class RefreshTokenService {
         secureRandom.nextBytes(tokenBytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
         // Key 使用哈希，避免 Redis 泄露时直接暴露可用的 Refresh Token。
-        String tokenHash = sha256(token);
-        String key = KEY_PREFIX + tokenHash;
+        String key = key(token);
         RefreshSession session = new RefreshSession(userId, username, Instant.now());
         redisTemplate.opsForHash().putAll(key, Map.of(
                 "userId", String.valueOf(session.userId()),
@@ -50,6 +51,49 @@ public class RefreshTokenService {
         return new IssuedRefreshToken(token, REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60);
     }
 
+    /**
+     * 一次性消费 Refresh Token 会话。
+     *
+     * <p>读取完成后只有成功删除 Redis Key 的调用方可以继续换发，避免旧 Token 被重复使用。</p>
+     */
+    public Optional<RefreshSession> consume(String token) {
+        if (!StringUtils.hasText(token)) {
+            return Optional.empty();
+        }
+        String key = key(token);
+        Map<Object, Object> values = redisTemplate.opsForHash().entries(key);
+        if (values.isEmpty()) {
+            return Optional.empty();
+        }
+        RefreshSession session;
+        try {
+            session = new RefreshSession(
+                    Long.valueOf(String.valueOf(values.get("userId"))),
+                    String.valueOf(values.get("username")),
+                    Instant.parse(String.valueOf(values.get("createdAt"))));
+        } catch (RuntimeException exception) {
+            redisTemplate.delete(key);
+            return Optional.empty();
+        }
+        if (!Boolean.TRUE.equals(redisTemplate.delete(key))) {
+            return Optional.empty();
+        }
+        return Optional.of(session);
+    }
+
+    /** 撤销 Refresh Token；重复撤销保持幂等。 */
+    public void revoke(String token) {
+        if (StringUtils.hasText(token)) {
+            redisTemplate.delete(key(token));
+        }
+    }
+
+    /** 将原始 Refresh Token 转换为 Redis 会话 Key。 */
+    private String key(String token) {
+        return KEY_PREFIX + sha256(token);
+    }
+
+    /** 计算 Refresh Token 的 SHA-256 十六进制摘要。 */
     private String sha256(String value) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")

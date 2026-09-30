@@ -1,6 +1,7 @@
 package com.lzj.railway.user.service;
 
 import com.lzj.railway.user.dto.request.LoginRequest;
+import com.lzj.railway.user.dto.request.RefreshTokenRequest;
 import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
@@ -22,4 +23,19 @@ public interface UserAuthService {
      * @return Access Token、Refresh Token 与用户基础信息
      */
     LoginResponse login(LoginRequest request);
+
+    /**
+     * 消费旧 Refresh Token，并轮换签发一组新 Token。
+     *
+     * @param request 当前有效的 Refresh Token
+     * @return 新的 Access Token、Refresh Token 与用户基础信息
+     */
+    LoginResponse refresh(RefreshTokenRequest request);
+
+    /**
+     * 撤销当前 Refresh Token 会话。
+     *
+     * @param request 需要撤销的 Refresh Token
+     */
+    void logout(RefreshTokenRequest request);
 }
