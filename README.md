@@ -1,5 +1,20 @@
 # Railway Platform
 
+## User Service：注册与登录（第一阶段）
+
+`user-service` 现在监听 `8081`，已实现以下端点：
+
+- `POST /api/user/register`：用户名、密码、手机号、邮箱注册；用户名使用 Redisson 分布式锁，密码使用 BCrypt 哈希，写入 `t_user`、`t_user_phone`、`t_user_mail`。
+- `POST /api/user/login`：支持用户名、手机号或邮箱加密码登录。手机号/邮箱会先查询索引表获得用户名，再查询 `t_user`。
+
+成功登录返回 15 分钟的 JWT Access Token 和 30 天的随机 Refresh Token。Redis 仅以 `SHA-256` 哈希作为 Refresh Token 的 Key 保存 Session 元数据，绝不保存原始 Refresh Token。注册提交后会清理预留的用户缓存 Key，并将用户名加入 `railway:user:username` Bloom Filter。
+
+本地运行前，启动 `deploy/compose.yaml` 中的 MySQL、Redis 和 Nacos；用户分库配置默认连接 `12306_user_0` / `12306_user_1`，其本地开发密码与 `deploy/.env.example` 的 `MYSQL_ROOT_PASSWORD` 一致。生产环境应将数据源密码、JWT 密钥和 AES 密钥替换为独立密钥管理系统中的值。
+
+注册目前使用普通 Spring `@Transactional`。因为手机号与邮箱索引可能路由到不同的物理库，这不能提供跨库原子提交保证；后续若需要强一致性，应改为分布式事务或采用可靠事件/补偿方案。
+
+本阶段不实现验证码、账号冻结/注销、失败次数锁定与风控、登录审计、登出、Refresh Token 换发、找回/修改密码、实名资料和乘车人接口；相应错误码已预留，后续逐项接入。
+
 这是一个逐步建设的前后端 Monorepo。目前已建立后端 Maven 多模块结构和基础组件库，业务服务与前端工程将继续按模块演进。
 
 ## 当前结构
@@ -389,3 +404,15 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml ps nacos
 控制台地址为 `http://localhost:8848/nacos`，本地开发的默认账号为 `nacos` / `nacos`。服务端 HTTP 地址为 `localhost:8848`，Nacos 2.x gRPC 客户端端口为 `9848`。
 
 该 Compose 服务使用带持久卷的单机 Derby 存储，并已启用鉴权；只适用于本地开发。`.env.example` 中的 token 是公开的本地示例，生产环境必须替换为独立的 Base64 密钥（原文至少 32 字节）并部署 Nacos 集群与外部存储。
+
+## Redis 本地开发环境
+
+Redis 为缓存、分布式 ID 和幂等控制提供本地中间件环境。它启用了认证、AOF 持久化，并使用 `redis-data` Docker 命名卷保存数据：
+
+```powershell
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d redis
+docker compose --env-file deploy/.env -f deploy/compose.yaml ps redis
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec -T redis sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping'
+```
+
+本机地址为 `localhost:6379`。业务服务后续应通过环境变量或 Nacos 获取 Redis 密码，不能将本地示例密码用于生产环境。
