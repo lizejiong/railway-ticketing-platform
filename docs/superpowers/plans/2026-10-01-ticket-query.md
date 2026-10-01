@@ -104,6 +104,8 @@ cd backend
 </dependency>
 ```
 
+同时在 `build.plugins` 声明 `org.springframework.boot:spring-boot-maven-plugin:3.0.7`，以支持 `spring-boot:run` 和可执行 Jar 打包。
+
 - [ ] **步骤 3：建立启动入口和 Nacos 配置引导**
 
 创建启动类：
@@ -456,6 +458,8 @@ springdoc:
 - [ ] **步骤 3：核验基础数据和启动服务**
 
 确认 Docker MySQL 的 `12306_ticket` 中存在 `t_train`、`t_train_station_relation`、`t_train_station_price`、`t_seat`；若 Docker 数据卷在导入脚本添加前已创建，则手动执行参考项目的 schema 和 data SQL 一次。启动 `ticket-service` 后，Nacos 服务列表应出现 `ticket-service`。
+
+初始化脚本必须通过 `mysql --default-character-set=utf8mb4` 导入 SQL；否则中文站名会被错误按 latin1 解释，导致“北京南”等正常 UTF-8 查询无法命中。已有数据卷需要在确认后仅重建 `12306_ticket` 的示例数据，不能通过改查询条件兼容乱码数据。
 
 - [ ] **步骤 4：经网关联调**
 

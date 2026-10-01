@@ -6,7 +6,7 @@ import_sql() {
   sed -E '/^[[:space:]]*USE[[:space:]]*$/ {
     N
     s/^[[:space:]]*USE[[:space:]]*\n[[:space:]]*([[:alnum:]_]+);/USE `\1`;/
-  }' "$source_file" | mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}"
+  }' "$source_file" | mysql --protocol=socket --default-character-set=utf8mb4 -uroot -p"${MYSQL_ROOT_PASSWORD}"
 }
 
 import_sql /docker-entrypoint-initdb.d/10-user-schema.source
