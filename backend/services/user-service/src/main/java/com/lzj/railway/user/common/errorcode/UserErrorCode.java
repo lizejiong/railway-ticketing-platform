@@ -17,7 +17,9 @@ public enum UserErrorCode implements ErrorCode {
     PASSENGER_ACCESS_DENIED("U000010", "无权操作该乘车人"),
     AUTHENTICATION_REQUIRED("U000011", "请先登录"),
     REFRESH_TOKEN_INVALID("U000012", "Refresh Token 无效或已过期"),
-    PASSENGER_ALREADY_EXISTS("U000013", "该乘车人已存在");
+    PASSENGER_ALREADY_EXISTS("U000013", "该乘车人已存在"),
+    REGISTRATION_PARAMETER_INVALID("U000014", "注册参数不正确"),
+    IDENTITY_DELETION_LIMIT_EXCEEDED("U000015", "该证件号注销账号次数过多，暂不允许重新注册");
 
     private final String code;
     private final String message;

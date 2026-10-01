@@ -100,6 +100,11 @@ rules:
         type: HASH_MOD
         props:
           sharding-count: 32
+  - !SINGLE
+    tables:
+      - ds_0.t_user_deletion
+      - ds_0.t_user_reuse
+    defaultDataSource: ds_0
   - !ENCRYPT
     tables:
       t_user:
@@ -123,6 +128,12 @@ rules:
             encryptorName: common_encryptor
           phone:
             cipherColumn: phone
+            encryptorName: common_encryptor
+        queryWithCipherColumn: true
+      t_user_deletion:
+        columns:
+          id_card:
+            cipherColumn: id_card
             encryptorName: common_encryptor
         queryWithCipherColumn: true
     encryptors:

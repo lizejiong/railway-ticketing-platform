@@ -1,5 +1,7 @@
 package com.lzj.railway.user.service.impl;
 
+import com.lzj.railway.framework.designpattern.chain.ChainDecision;
+import com.lzj.railway.framework.designpattern.chain.ChainHandler;
 import com.lzj.railway.framework.starter.user.token.JwtTokenGenerator;
 import com.lzj.railway.user.dao.entity.UserDO;
 import com.lzj.railway.user.dao.entity.UserMailDO;
@@ -12,20 +14,29 @@ import com.lzj.railway.user.dto.request.RefreshTokenRequest;
 import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
+import com.lzj.railway.user.service.registration.RegisterValidationChain;
 import com.lzj.railway.user.session.RefreshTokenService;
 import com.lzj.railway.user.session.RefreshSession;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.concurrent.TimeUnit;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,6 +44,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,17 +71,41 @@ class UserAuthServiceImplTest {
     private JwtTokenGenerator jwtTokenGenerator;
     @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private ChainHandler<RegisterRequest> registerHandler;
+    private RegisterValidationChain registerValidationChain;
+    @Mock
+    private TransactionTemplate transactionTemplate;
+    @Mock
+    private RBloomFilter<String> usernameBloomFilter;
+    @Mock
+    private SetOperations<String, String> setOperations;
+
+    @BeforeEach
+    void setUpRegistrationChain() {
+        registerValidationChain = new RegisterValidationChain(List.of(registerHandler));
+    }
 
     @Test
     void registersUserAndCreatesBothAccountIndexes() throws InterruptedException {
+        when(registerHandler.handle(any(RegisterRequest.class))).thenReturn(ChainDecision.CONTINUE);
         RegisterRequest request = new RegisterRequest();
         request.setUsername("railway_user");
         request.setPassword("Password123");
         request.setPhone("13800138000");
-        request.setEmail("railway@example.com");
+        request.setEmail("RAILWAY@example.com");
+        request.setRealName("张三");
+        request.setIdType(0);
+        request.setIdCard("11010119900307123x");
         when(redissonClient.getLock(anyString())).thenReturn(registerLock);
-        when(registerLock.tryLock(5, 30, TimeUnit.SECONDS)).thenReturn(true);
+        when(registerLock.tryLock(5, TimeUnit.SECONDS)).thenReturn(true);
         when(registerLock.isHeldByCurrentThread()).thenReturn(true);
+        when(redissonClient.<String>getBloomFilter(anyString())).thenReturn(usernameBloomFilter);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(mock(TransactionStatus.class));
+        });
         when(passwordEncoder.encode("Password123")).thenReturn("bcrypt-hash");
         doAnswer(invocation -> {
             invocation.<UserDO>getArgument(0).setId(1001L);
@@ -76,19 +113,28 @@ class UserAuthServiceImplTest {
         }).when(userMapper).insert(any(UserDO.class));
         UserAuthServiceImpl service = newService();
 
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            RegisterResponse response = service.register(request);
+        RegisterResponse response = service.register(request);
 
-            assertEquals(1001L, response.userId());
-            verify(userMapper).insert(any(UserDO.class));
-            verify(userPhoneMapper, times(1)).insert(any(UserPhoneDO.class));
-            verify(userMailMapper, times(1)).insert(any(UserMailDO.class));
-            verify(registerLock).unlock();
-            assertEquals(1, TransactionSynchronizationManager.getSynchronizations().size());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertEquals(1001L, response.userId());
+        assertEquals("railway@example.com", response.email());
+        assertEquals("张三", response.realName());
+        assertEquals(1, response.verifyStatus());
+        ArgumentCaptor<UserDO> userCaptor = ArgumentCaptor.forClass(UserDO.class);
+        verify(userMapper).insert(userCaptor.capture());
+        assertEquals("张三", userCaptor.getValue().getRealName());
+        assertEquals(0, userCaptor.getValue().getIdType());
+        assertEquals("11010119900307123X", userCaptor.getValue().getIdCard());
+        assertEquals(1, userCaptor.getValue().getVerifyStatus());
+        verify(userPhoneMapper, times(1)).insert(any(UserPhoneDO.class));
+        verify(userMailMapper, times(1)).insert(any(UserMailDO.class));
+        verify(setOperations).remove(anyString(), org.mockito.ArgumentMatchers.eq("railway_user"));
+        InOrder order = inOrder(registerHandler, redissonClient, transactionTemplate,
+                usernameBloomFilter, registerLock);
+        order.verify(registerHandler).handle(any(RegisterRequest.class));
+        order.verify(redissonClient).getLock(anyString());
+        order.verify(transactionTemplate).execute(any());
+        order.verify(usernameBloomFilter).add("railway_user");
+        order.verify(registerLock).unlock();
     }
 
     @Test
@@ -160,6 +206,7 @@ class UserAuthServiceImplTest {
 
     private UserAuthServiceImpl newService() {
         return new UserAuthServiceImpl(userMapper, userPhoneMapper, userMailMapper, redissonClient,
-                redisTemplate, passwordEncoder, jwtTokenGenerator, refreshTokenService);
+                redisTemplate, passwordEncoder, jwtTokenGenerator, refreshTokenService,
+                registerValidationChain, transactionTemplate);
     }
 }

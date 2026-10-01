@@ -17,8 +17,11 @@ import com.lzj.railway.user.dto.request.RegisterRequest;
 import com.lzj.railway.user.dto.response.LoginResponse;
 import com.lzj.railway.user.dto.response.RegisterResponse;
 import com.lzj.railway.user.service.UserAuthService;
+import com.lzj.railway.user.service.registration.RegisterCacheKey;
+import com.lzj.railway.user.service.registration.RegisterValidationChain;
 import com.lzj.railway.user.session.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -26,21 +29,20 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /** 用户认证与注册服务实现，事务编排与本机参考项目保持一致。 */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserAuthServiceImpl implements UserAuthService {
 
     private static final String REGISTER_LOCK_PREFIX = "railway:user:register:lock:";
-    private static final String USERNAME_BLOOM_FILTER = "railway:user:username";
     private static final String USER_PROFILE_CACHE_PREFIX = "railway:user:profile:";
     private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
     private static final long ACCESS_TOKEN_EXPIRES_IN_SECONDS = 15 * 60L;
@@ -53,30 +55,29 @@ public class UserAuthServiceImpl implements UserAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenGenerator jwtTokenGenerator;
     private final RefreshTokenService refreshTokenService;
+    private final RegisterValidationChain registerValidationChain;
+    private final TransactionTemplate transactionTemplate;
 
     /**
-     * 在一个本地事务中完成用户名加锁、唯一性校验和三张逻辑表写入。
+     * 在用户名分布式锁内执行责任链复核、本地事务和注册缓存维护。
      *
-     * <p>手机号和邮箱索引可能路由到不同物理库，因此本事务不提供分布式事务原子性。</p>
+     * <p>责任链负责快速失败；锁内数据库查询和物理唯一索引仍是并发场景下的最终约束。</p>
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public RegisterResponse register(RegisterRequest request) {
-        String username = request.getUsername().trim();
+        RegisterRequest normalizedRequest = registerValidationChain.validateAndNormalize(request);
+        String username = normalizedRequest.getUsername();
         // 使用用户名作为 hash tag，便于未来 Redis Cluster 下同一用户的相关 Key 落在同一槽位。
         RLock lock = redissonClient.getLock(REGISTER_LOCK_PREFIX + "{" + username + "}");
         try {
-            if (!lock.tryLock(5, 30, TimeUnit.SECONDS)) {
+            // 不指定固定租约，交给 Redisson watchdog 在事务执行期间自动续期。
+            if (!lock.tryLock(5, TimeUnit.SECONDS)) {
                 throw new ClientException(UserErrorCode.REGISTRATION_IN_PROGRESS);
             }
-            // 预检查用于返回明确错误码；数据库唯一索引仍是并发场景下的最终约束。
-            ensureRegistrationAvailable(username, request.getPhone(), request.getEmail());
-            UserDO user = newUser(request, username);
-            userMapper.insert(user);
-            userPhoneMapper.insert(newPhoneIndex(username, request.getPhone()));
-            userMailMapper.insert(newMailIndex(username, request.getEmail()));
-            registerAfterCommit(username);
-            return new RegisterResponse(user.getId(), username, request.getPhone(), request.getEmail());
+            RegisterResponse response = Objects.requireNonNull(transactionTemplate.execute(status ->
+                    persistRegistration(normalizedRequest, username)), "注册事务未返回结果");
+            maintainRegistrationCache(username);
+            return response;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new ClientException(UserErrorCode.REGISTRATION_IN_PROGRESS);
@@ -87,6 +88,17 @@ public class UserAuthServiceImpl implements UserAuthService {
                 lock.unlock();
             }
         }
+    }
+
+    /** 在当前本地事务中执行数据库权威复核并写入用户主表、手机号索引和邮箱索引。 */
+    private RegisterResponse persistRegistration(RegisterRequest request, String username) {
+        ensureRegistrationAvailable(username, request.getPhone(), request.getEmail());
+        UserDO user = newUser(request, username);
+        userMapper.insert(user);
+        userPhoneMapper.insert(newPhoneIndex(username, request.getPhone()));
+        userMailMapper.insert(newMailIndex(username, request.getEmail()));
+        return new RegisterResponse(user.getId(), username, request.getPhone(), request.getEmail(),
+                request.getRealName(), request.getIdType(), user.getVerifyStatus());
     }
 
     /**
@@ -197,9 +209,13 @@ public class UserAuthServiceImpl implements UserAuthService {
         UserDO user = new UserDO();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRealName(request.getRealName());
+        user.setIdType(request.getIdType());
+        user.setIdCard(request.getIdCard());
         user.setPhone(request.getPhone());
         user.setMail(request.getEmail());
         user.setRegion("0");
+        user.setVerifyStatus(1);
         user.setDeletionTime(0L);
         user.setDelFlag(0);
         user.setCreateTime(now);
@@ -233,22 +249,21 @@ public class UserAuthServiceImpl implements UserAuthService {
         return index;
     }
 
-    /** 注册仅能在数据库事务提交成功后执行的缓存维护动作。 */
-    private void registerAfterCommit(String username) {
-        // 缓存与 Bloom Filter 只能在事务提交后更新，避免回滚数据被错误地当作有效用户。
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                redisTemplate.delete(USER_PROFILE_CACHE_PREFIX + username);
-                try {
-                    RBloomFilter<String> bloomFilter = redissonClient.getBloomFilter(USERNAME_BLOOM_FILTER);
-                    bloomFilter.tryInit(10_000_000L, 0.0001D);
-                    bloomFilter.add(username);
-                } catch (RuntimeException ignored) {
-                    // 缓存预热失败不能影响已成功提交的注册结果。
-                }
-            }
-        });
+    /**
+     * 数据库事务提交后维护注册缓存。
+     *
+     * <p>缓存失败不会改变已经提交的注册结果，后续请求仍会通过数据库查询和唯一索引得到正确结果。</p>
+     */
+    private void maintainRegistrationCache(String username) {
+        try {
+            redisTemplate.delete(USER_PROFILE_CACHE_PREFIX + username);
+            RBloomFilter<String> bloomFilter = redissonClient.getBloomFilter(RegisterCacheKey.USERNAME_BLOOM_FILTER);
+            bloomFilter.tryInit(10_000_000L, 0.0001D);
+            bloomFilter.add(username);
+            redisTemplate.opsForSet().remove(RegisterCacheKey.reusableUsernameSet(username), username);
+        } catch (RuntimeException exception) {
+            log.warn("注册已提交，但用户名缓存维护失败，username={}", username, exception);
+        }
     }
 
     /** 将物理唯一索引冲突转换为对外稳定的注册错误码。 */

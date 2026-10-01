@@ -28,7 +28,8 @@ public class UserAuthController {
 
     @PostMapping("/register")
     @Idempotent(uniqueKeyPrefix = "user:register")
-    @Operation(summary = "账号注册", description = "校验用户名、手机号和邮箱唯一性后创建用户账号。")
+    @Operation(summary = "账号注册",
+            description = "注册即完成实名信息登记；依次校验参数、用户名可用性和证件注销次数，随后创建用户账号。")
     public Result<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
         return Results.success(userAuthService.register(request));
     }
