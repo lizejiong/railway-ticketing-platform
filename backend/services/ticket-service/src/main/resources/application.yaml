@@ -1,0 +1,16 @@
+spring:
+  config:
+    # 服务运行参数统一由 Nacos 的 ticket-service.yaml 提供。
+    import:
+      - nacos:ticket-service.yaml?group=${NACOS_GROUP:DEFAULT_GROUP}
+  application:
+    name: ticket-service
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
