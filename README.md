@@ -1,5 +1,13 @@
 # Railway Platform
 
+## 票务查询
+
+`ticket-service` 默认监听 `8082`，通过 Nacos 中的 `ticket-service.yaml` 配置 MySQL 与端口，并由网关将 `/api/ticket/**` 转发至该服务。车次与余票属于公开信息，不需要携带 JWT。
+
+- `GET /api/ticket/query?departure=北京南&arrival=上海虹桥&departureDate=2026-10-02`：按区间和乘车日期查询可售车次、席别票价与实时余票。
+
+首版直接从 `12306_ticket` 的 `t_train_station_relation`、`t_train`、`t_train_station_price` 和 `t_seat` 查询；余票按未锁定座位实时聚合。暂不包含 Redis 余票缓存、选座、购票扣减、订单和支付，这些会在后续购票链路中实现。
+
 ## 用户账号核心接口
 
 所有客户端请求统一从网关 `http://127.0.0.1:8080` 进入。注册、登录、刷新令牌和退出登录为公开接口；用户资料与乘车人接口必须携带 `Authorization: Bearer <access-token>`。
