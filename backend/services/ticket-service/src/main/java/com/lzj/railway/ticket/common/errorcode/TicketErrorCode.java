@@ -11,7 +11,10 @@ public enum TicketErrorCode implements ErrorCode {
     QUERY_PARAMETER_INVALID("T000001", "车票查询参数不正确"),
 
     /** 乘车日期早于当前日期，不允许查询。 */
-    DEPARTURE_DATE_INVALID("T000002", "乘车日期不能早于当天");
+    DEPARTURE_DATE_INVALID("T000002", "乘车日期不能早于当天"),
+
+    /** 出发站或到达站编码未映射到有效车站。 */
+    STATION_NOT_FOUND("T000003", "出发站或到达站不存在");
 
     private final String code;
     private final String message;

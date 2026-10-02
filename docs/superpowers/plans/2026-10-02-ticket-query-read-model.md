@@ -101,7 +101,7 @@ Run: `cd backend; .\mvnw.cmd -pl services/ticket-service -am test "-Dtest=Ticket
 
 Expected: `BUILD SUCCESS`，测试确认 `DistributedCache` 可由组件库自动装配。
 
-- [ ] **步骤 5：提交基础设施依赖**
+- [x] **步骤 5：提交基础设施依赖**
 
 ```powershell
 git add backend/services/ticket-service/pom.xml backend/services/ticket-service/src/test/java/com/lzj/railway/ticket/config/TicketRedisConfigurationTest.java
@@ -123,7 +123,7 @@ git commit -m "feat: add ticket query cache dependencies"
 - 修改：`backend/services/ticket-service/src/main/java/com/lzj/railway/ticket/common/errorcode/TicketErrorCode.java`
 - 测试：`backend/services/ticket-service/src/test/java/com/lzj/railway/ticket/service/query/TicketQueryValidationChainTest.java`
 
-- [ ] **步骤 1：编写责任链失败测试**
+- [x] **步骤 1：编写责任链失败测试**
 
 ```java
 @Test
@@ -145,13 +145,13 @@ void shouldRejectPastDateBeforeStationCacheLookup() {
 }
 ```
 
-- [ ] **步骤 2：运行测试，确认类型尚不存在**
+- [x] **步骤 2：运行测试，确认类型尚不存在**
 
 Run: `cd backend; .\mvnw.cmd -pl services/ticket-service -am test "-Dtest=TicketQueryValidationChainTest" "-Dsurefire.failIfNoSpecifiedTests=false"`
 
 Expected: 编译失败，提示 `StationRegionCache` 与 `TicketQueryValidationChain` 不存在。
 
-- [ ] **步骤 3：将请求 DTO 固定为参考项目的站点编码语义**
+- [x] **步骤 3：将请求 DTO 固定为参考项目的站点编码语义**
 
 ```java
 public record TicketQueryRequest(
@@ -169,7 +169,7 @@ STATION_NOT_FOUND("T000003", "出发站或到达站不存在");
 
 `StationDO` 映射 `t_station` 的 `id`、`code`、`name`、`region`、`regionName`、`delFlag` 字段；`StationMapper extends BaseMapper<StationDO>`。
 
-- [ ] **步骤 4：实现站点地区 Hash 与责任链**
+- [x] **步骤 4：实现站点地区 Hash 与责任链**
 
 `StationRegionCache` 必须实现以下行为。参考项目分别维护站点到地区、站点到展示名称的映射；本项目同样用两个 Hash，避免将展示名称误当成地区：
 
@@ -225,7 +225,7 @@ order 10  日期不早于今天、fromStation != toStation
 order 20  StationRegionCache.getStations，确认两个站点编码存在
 ```
 
-- [ ] **步骤 5：运行责任链测试**
+- [x] **步骤 5：运行责任链测试**
 
 Run: `cd backend; .\mvnw.cmd -pl services/ticket-service -am test "-Dtest=TicketQueryValidationChainTest" "-Dsurefire.failIfNoSpecifiedTests=false"`
 

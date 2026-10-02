@@ -3,7 +3,7 @@ package com.lzj.railway.ticket.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
@@ -11,16 +11,36 @@ import java.time.LocalDate;
 /**
  * 车次区间查询请求参数。
  *
- * @param departure 出发站名称
- * @param arrival 到达站名称
+ * @param fromStation 出发站编码，对应 t_station.code
+ * @param toStation 到达站编码，对应 t_station.code
  * @param departureDate 乘车日期
  */
 public record TicketQueryRequest(
-        @Schema(description = "出发站名称", example = "北京南")
-        @NotBlank(message = "出发站不能为空") @Size(max = 64) String departure,
-        @Schema(description = "到达站名称", example = "上海虹桥")
-        @NotBlank(message = "到达站不能为空") @Size(max = 64) String arrival,
+        @Schema(description = "出发站编码，对应 t_station.code", example = "VNP")
+        @NotBlank(message = "出发站编码不能为空")
+        @Pattern(regexp = "^[A-Za-z0-9]{2,16}$", message = "出发站编码格式不正确") String fromStation,
+        @Schema(description = "到达站编码，对应 t_station.code", example = "NKH")
+        @NotBlank(message = "到达站编码不能为空")
+        @Pattern(regexp = "^[A-Za-z0-9]{2,16}$", message = "到达站编码格式不正确") String toStation,
         @Schema(description = "乘车日期", example = "2026-10-02")
         @NotNull(message = "乘车日期不能为空")
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDate) {
+
+    /**
+     * 为旧查询组装逻辑提供出发站字段兼容访问器。
+     *
+     * @return 出发站编码
+     */
+    public String departure() {
+        return fromStation;
+    }
+
+    /**
+     * 为旧查询组装逻辑提供到达站字段兼容访问器。
+     *
+     * @return 到达站编码
+     */
+    public String arrival() {
+        return toStation;
+    }
 }
