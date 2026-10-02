@@ -23,6 +23,10 @@ public class TrainStationRelationDO {
     private String departure;
     /** 到达站。 */
     private String arrival;
+    /** 区间出发站所属地区名称。 */
+    private String startRegion;
+    /** 区间到达站所属地区名称。 */
+    private String endRegion;
     /** 是否始发站。 */
     private Boolean departureFlag;
     /** 是否终到站。 */

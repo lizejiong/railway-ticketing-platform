@@ -28,6 +28,9 @@ class TicketQueryControllerTest {
     private TicketQueryService ticketQueryService;
     private MockMvc mockMvc;
 
+    /**
+     * 创建独立控制器测试环境。
+     */
     @BeforeEach
     void setUp() {
         ticketQueryService = mock(TicketQueryService.class);
@@ -36,13 +39,16 @@ class TicketQueryControllerTest {
                 .build();
     }
 
+    /**
+     * 站点编码参数应被绑定并返回车次查询结果。
+     */
     @Test
     void shouldReturnQueryResult() throws Exception {
         when(ticketQueryService.query(any())).thenReturn(List.of(response()));
 
         mockMvc.perform(get("/api/ticket/query")
-                        .param("departure", "北京南")
-                        .param("arrival", "上海虹桥")
+                        .param("fromStation", "VNP")
+                        .param("toStation", "NKH")
                         .param("departureDate", "2026-10-02")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -50,17 +56,20 @@ class TicketQueryControllerTest {
                 .andExpect(jsonPath("$.data[0].trainNumber").value("G1"));
     }
 
+    /**
+     * 缺少乘车日期时应由参数校验返回统一失败结果。
+     */
     @Test
     void shouldRejectMissingDepartureDate() throws Exception {
         mockMvc.perform(get("/api/ticket/query")
-                        .param("departure", "北京南")
-                        .param("arrival", "上海虹桥"))
+                        .param("fromStation", "VNP")
+                        .param("toStation", "NKH"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(false));
     }
 
     private TicketQueryResponse response() {
-        return new TicketQueryResponse(1L, "G1", "北京南", "上海虹桥", "07:00", "11:28", 268L,
+        return new TicketQueryResponse(1L, "G1", "北京南", "南京南", "07:00", "10:00", 180L,
                 true, true, 0, "0,6", 0,
                 List.of(new SeatClassResponse(0, 20, new BigDecimal("553.00"))));
     }

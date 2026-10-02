@@ -1,5 +1,15 @@
 # Railway Platform
 
+## 票务查询（Redis 读模型）
+
+票务查询统一从网关调用：
+
+`GET /api/ticket/query?fromStation=VNP&toStation=NKH&departureDate=2026-10-02`
+
+`fromStation`、`toStation` 是 `t_station.code`，示例中的 `VNP`、`NKH` 分别代表北京南、南京南。查询责任链会先校验编码、日期和同站请求；随后通过 Redis 车站-地区映射定位区间。车次区间、列车和票价使用缓存旁路与 Redisson 双检锁，票价和余票由 Redis Pipeline 批量读取，服务启动时会预热车站、区间、票价和余票缓存。
+
+本轮余票 Hash 与参考项目的查询侧语义一致，Key 尚未按 `departureDate` 隔离，日期当前仅参与参数校验。因此在“锁座/购票”链路完成前，余票只可作为查询演示，不能作为真实库存扣减依据。
+
 ## 票务查询
 
 `ticket-service` 默认监听 `8082`，通过 Nacos 中的 `ticket-service.yaml` 配置 MySQL 与端口，并由网关将 `/api/ticket/**` 转发至该服务。车次与余票属于公开信息，不需要携带 JWT。

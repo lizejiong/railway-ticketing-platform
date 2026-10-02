@@ -28,13 +28,13 @@ public class TicketQueryController {
     private final TicketQueryService ticketQueryService;
 
     /**
-     * 按出发站、到达站和乘车日期查询可售车次。
+     * 按出发站编码、到达站编码和乘车日期查询可售车次。
      *
-     * @param request 查询条件
+     * @param request 查询条件，fromStation、toStation 对应 t_station.code
      * @return 可售车次及席别余票
      */
     @GetMapping("/query")
-    @Operation(summary = "查询车次和余票")
+    @Operation(summary = "查询车次和余票", description = "fromStation、toStation 使用 t_station.code，例如 VNP、NKH")
     public Result<List<TicketQueryResponse>> query(@Valid @ModelAttribute TicketQueryRequest request) {
         return Results.success(ticketQueryService.query(request));
     }

@@ -25,22 +25,4 @@ public record TicketQueryRequest(
         @Schema(description = "乘车日期", example = "2026-10-02")
         @NotNull(message = "乘车日期不能为空")
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate departureDate) {
-
-    /**
-     * 为旧查询组装逻辑提供出发站字段兼容访问器。
-     *
-     * @return 出发站编码
-     */
-    public String departure() {
-        return fromStation;
-    }
-
-    /**
-     * 为旧查询组装逻辑提供到达站字段兼容访问器。
-     *
-     * @return 到达站编码
-     */
-    public String arrival() {
-        return toStation;
-    }
 }
