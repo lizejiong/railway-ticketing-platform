@@ -1,10 +1,10 @@
 package com.lzj.railway.ticket.service.query;
 
 import com.lzj.railway.ticket.dao.entity.TrainStationRelationDO;
-import com.lzj.railway.ticket.dao.mapper.SeatMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainStationPriceMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainStationRelationMapper;
+import com.lzj.railway.ticket.service.purchase.TicketAvailabilityTokenBucket;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,7 +38,7 @@ class TicketQueryReadModelTest {
     @Mock
     private TrainStationPriceMapper trainStationPriceMapper;
     @Mock
-    private SeatMapper seatMapper;
+    private TicketAvailabilityTokenBucket ticketAvailabilityTokenBucket;
     @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
@@ -57,7 +57,7 @@ class TicketQueryReadModelTest {
     void setUp() {
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         readModel = new TicketQueryReadModel(trainStationRelationMapper, trainMapper,
-                trainStationPriceMapper, seatMapper, redisTemplate, redissonClient);
+                trainStationPriceMapper, ticketAvailabilityTokenBucket, redisTemplate, redissonClient);
     }
 
     /**

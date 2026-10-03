@@ -10,6 +10,7 @@ import com.lzj.railway.user.dao.mapper.PassengerMapper;
 import com.lzj.railway.user.dto.request.PassengerCreateRequest;
 import com.lzj.railway.user.dto.request.PassengerUpdateRequest;
 import com.lzj.railway.user.dto.response.PassengerResponse;
+import com.lzj.railway.user.dto.response.PassengerActualResponse;
 import com.lzj.railway.user.service.PassengerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,28 @@ public class PassengerServiceImpl implements PassengerService {
                         .orderByAsc(PassengerDO::getId))
                 .stream()
                 .map(this::toResponse)
+                .toList();
+    }
+
+    /**
+     * 使用用户名分片键批量取得真实乘车人信息。
+     *
+     * <p>该方法不读取 {@link UserContext}：调用方显式传入用户名，并由票务服务将其与登录上下文保持一致。
+     * 返回值保留敏感字段，只能由内部服务间接口调用。</p>
+     */
+    @Override
+    public List<PassengerActualResponse> listPassengerActualByIds(String username, List<Long> passengerIds) {
+        if (!StringUtils.hasText(username) || passengerIds == null || passengerIds.isEmpty()) {
+            return List.of();
+        }
+        return passengerMapper.selectList(new LambdaQueryWrapper<PassengerDO>()
+                        .eq(PassengerDO::getUsername, username)
+                        .in(PassengerDO::getId, passengerIds)
+                        .eq(PassengerDO::getDelFlag, 0))
+                .stream()
+                .map(passenger -> new PassengerActualResponse(passenger.getId(), passenger.getRealName(),
+                        passenger.getIdType(), passenger.getIdCard(), passenger.getDiscountType(),
+                        passenger.getPhone(), passenger.getVerifyStatus()))
                 .toList();
     }
 

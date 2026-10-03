@@ -6,15 +6,13 @@ import com.lzj.railway.ticket.common.constant.TicketCacheKey;
 import com.lzj.railway.ticket.dao.entity.TrainDO;
 import com.lzj.railway.ticket.dao.entity.TrainStationPriceDO;
 import com.lzj.railway.ticket.dao.entity.TrainStationRelationDO;
-import com.lzj.railway.ticket.dao.mapper.SeatMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainStationPriceMapper;
 import com.lzj.railway.ticket.dao.mapper.TrainStationRelationMapper;
-import com.lzj.railway.ticket.dao.mapper.dto.SeatRemainingDTO;
+import com.lzj.railway.ticket.service.purchase.TicketAvailabilityTokenBucket;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -41,7 +39,7 @@ public class TicketQueryReadModel {
     private final TrainStationRelationMapper trainStationRelationMapper;
     private final TrainMapper trainMapper;
     private final TrainStationPriceMapper trainStationPriceMapper;
-    private final SeatMapper seatMapper;
+    private final TicketAvailabilityTokenBucket ticketAvailabilityTokenBucket;
     private final StringRedisTemplate redisTemplate;
     private final RedissonClient redissonClient;
 
@@ -143,25 +141,27 @@ public class TicketQueryReadModel {
     }
 
     /**
-     * 使用 Redis Pipeline 批量读取多个区间的余票 Hash。
+     * 批量读取多个区间的余票。
+     *
+     * <p>每个区间都从同一列车令牌桶中读取，保证查询与购票预扣使用唯一库存口径。</p>
      *
      * @param routes 列车区间列表
      * @return 以列车主键为键、席别为内层键的余票映射
      */
     public Map<Long, Map<Integer, Integer>> findRemainingTicketsByRoutePipelined(
             List<TicketRouteCacheDTO> routes) {
-        routes.forEach(this::findRemainingTickets);
+        routes.forEach(route -> ticketAvailabilityTokenBucket.ensureInitialized(route.getTrainId()));
         List<Object> values = redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
             for (TicketRouteCacheDTO route : routes) {
-                connection.hashCommands().hGetAll(TicketCacheKey.remaining(
-                        route.getTrainId(), route.getDeparture(), route.getArrival())
+                connection.hashCommands().hGetAll(TicketCacheKey.remaining(route.getTrainId())
                         .getBytes(StandardCharsets.UTF_8));
             }
             return null;
         });
         Map<Long, Map<Integer, Integer>> result = new LinkedHashMap<>();
         for (int index = 0; index < routes.size(); index++) {
-            result.put(routes.get(index).getTrainId(), decodeRemainingTickets(values.get(index)));
+            TicketRouteCacheDTO route = routes.get(index);
+            result.put(route.getTrainId(), decodeRemainingTickets(values.get(index), route));
         }
         return result;
     }
@@ -223,42 +223,15 @@ public class TicketQueryReadModel {
     /**
      * 获取指定列车区间的席别余票。
      *
-     * <p>本地开发数据没有订单侧的余票同步链路，因此首次查询会按现有座位数据初始化 Hash；
-     * 后续查询只读取 Hash。扣减与回补不属于本查询读模型。</p>
+     * <p>首次读取会初始化列车令牌桶；后续查询直接读取令牌桶中该区间的 Field，
+     * 与购票的 Lua 预扣、取消回补保持一致。</p>
      *
      * @param route 列车区间
      * @return 以席别为键的余票数量
      */
     public Map<Integer, Integer> findRemainingTickets(TicketRouteCacheDTO route) {
-        String cacheKey = TicketCacheKey.remaining(route.getTrainId(), route.getDeparture(), route.getArrival());
-        Map<Integer, Integer> tickets = readRemainingTickets(cacheKey);
-        if (!tickets.isEmpty()) {
-            return tickets;
-        }
-        RLock lock = redissonClient.getLock(TicketCacheKey.lock(cacheKey));
-        lock.lock();
-        try {
-            tickets = readRemainingTickets(cacheKey);
-            if (tickets.isEmpty()) {
-                List<SeatRemainingDTO> rows = seatMapper.countAvailableSeatsByTrainIds(
-                        List.of(route.getTrainId()), route.getDeparture(), route.getArrival());
-                if (!rows.isEmpty()) {
-                    Map<Object, Object> values = rows.stream().collect(Collectors.toMap(
-                            row -> String.valueOf(row.seatType()),
-                            row -> String.valueOf(row.remainingTickets()),
-                            (first, ignored) -> first,
-                            LinkedHashMap::new));
-                    redisTemplate.opsForHash().putAll(cacheKey, values);
-                    tickets = rows.stream().collect(Collectors.toMap(
-                            SeatRemainingDTO::seatType, SeatRemainingDTO::remainingTickets));
-                }
-            }
-        } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
-        return tickets;
+        return ticketAvailabilityTokenBucket.getRemainingTickets(
+                route.getTrainId(), route.getDeparture(), route.getArrival());
     }
 
     private TrainDO findTrain(Long trainId) {
@@ -298,25 +271,26 @@ public class TicketQueryReadModel {
                 .toList();
     }
 
-    private Map<Integer, Integer> readRemainingTickets(String cacheKey) {
-        Map<Object, Object> entries = redisTemplate.opsForHash().entries(cacheKey);
-        if (entries == null || entries.isEmpty()) {
-            return Map.of();
-        }
-        Map<Integer, Integer> result = new LinkedHashMap<>();
-        entries.forEach((seatType, remainingTickets) -> result.put(
-                Integer.valueOf(seatType.toString()), Integer.valueOf(remainingTickets.toString())));
-        return result;
-    }
-
-    private Map<Integer, Integer> decodeRemainingTickets(Object value) {
+    /**
+     * 从 Redis Pipeline 返回的整列车令牌桶中筛选目标区间余票。
+     *
+     * @param value Pipeline 返回的 Hash 数据
+     * @param route 目标列车区间
+     * @return 按席别分组的余票数量
+     */
+    private Map<Integer, Integer> decodeRemainingTickets(Object value, TicketRouteCacheDTO route) {
         if (!(value instanceof Map<?, ?> entries) || entries.isEmpty()) {
             return Map.of();
         }
+        String fieldPrefix = route.getDeparture() + '_' + route.getArrival() + '_';
         Map<Integer, Integer> result = new LinkedHashMap<>();
-        entries.forEach((seatType, remainingTickets) -> result.put(
-                Integer.valueOf(decodePipelineValue(seatType)),
-                Integer.valueOf(decodePipelineValue(remainingTickets))));
+        entries.forEach((field, remainingTickets) -> {
+            String fieldName = decodePipelineValue(field);
+            if (fieldName.startsWith(fieldPrefix)) {
+                Integer seatType = Integer.valueOf(fieldName.substring(fieldPrefix.length()));
+                result.put(seatType, Integer.valueOf(decodePipelineValue(remainingTickets)));
+            }
+        });
         return result;
     }
 

@@ -44,15 +44,27 @@ public final class TicketCacheKey {
     }
 
     /**
-     * 生成区间余票缓存 Hash Key。
+     * 生成列车余票令牌桶的 Hash Key。
+     *
+     * <p>一趟列车的所有区间余票放在同一个 Hash 中，保证 Lua 脚本可以对多个途经区间原子扣减。</p>
      *
      * @param trainId 列车主键
-     * @param departure 出发站名称
-     * @param arrival 到达站名称
      * @return Redis Hash Key
      */
-    public static String remaining(Long trainId, String departure, String arrival) {
-        return PREFIX + "remaining:{" + trainId + "}:" + departure + '_' + arrival;
+    public static String remaining(Long trainId) {
+        return PREFIX + "remaining:{" + trainId + '}';
+    }
+
+    /**
+     * 生成余票令牌桶中的区间席别 Field。
+     *
+     * @param departure 区间出发站名称
+     * @param arrival 区间到达站名称
+     * @param seatType 席别编码
+     * @return Hash Field
+     */
+    public static String remainingField(String departure, String arrival, Integer seatType) {
+        return departure + '_' + arrival + '_' + seatType;
     }
 
     /**

@@ -17,4 +17,73 @@
         </foreach>
         GROUP BY train_id, seat_type
     </select>
+
+    <!-- 仅选择在所有受影响售票区间均为可售状态的实体座位，防止选到与既有行程冲突的座位。 -->
+    <select id="selectAvailableSeatsForSegments"
+            resultType="com.lzj.railway.ticket.dao.entity.SeatDO">
+        SELECT candidate.id,
+               candidate.train_id,
+               candidate.carriage_number,
+               candidate.seat_number,
+               candidate.seat_type,
+               candidate.start_station,
+               candidate.end_station,
+               candidate.price,
+               candidate.seat_status,
+               candidate.create_time,
+               candidate.update_time,
+               candidate.del_flag
+        FROM t_seat candidate
+        WHERE candidate.train_id = #{trainId}
+          AND candidate.seat_type = #{seatType}
+          AND candidate.start_station = #{affectedSegments[0].departure}
+          AND candidate.end_station = #{affectedSegments[0].arrival}
+          AND candidate.seat_status = 0
+          AND candidate.del_flag = 0
+          AND NOT EXISTS (
+              SELECT 1
+              FROM t_seat segment
+              WHERE segment.train_id = candidate.train_id
+                AND segment.carriage_number = candidate.carriage_number
+                AND segment.seat_number = candidate.seat_number
+                AND segment.del_flag = 0
+                AND segment.seat_status &lt;&gt; 0
+                AND (
+                    <foreach collection="affectedSegments" item="segment" separator=" OR ">
+                        (segment.start_station = #{segment.departure}
+                         AND segment.end_station = #{segment.arrival})
+                    </foreach>
+                )
+          )
+        ORDER BY candidate.carriage_number, candidate.seat_number
+        LIMIT #{limit}
+    </select>
+
+    <!-- 使用 seat_status 条件更新作为并发下最终的座位占用判定。 -->
+    <update id="lockSeat">
+        UPDATE t_seat
+        SET seat_status = 1,
+            update_time = NOW()
+        WHERE train_id = #{trainId}
+          AND carriage_number = #{carriageNumber}
+          AND seat_number = #{seatNumber}
+          AND start_station = #{departure}
+          AND end_station = #{arrival}
+          AND seat_status = 0
+          AND del_flag = 0
+    </update>
+
+    <!-- 仅释放当前处于锁定状态的区间记录。 -->
+    <update id="unlockSeat">
+        UPDATE t_seat
+        SET seat_status = 0,
+            update_time = NOW()
+        WHERE train_id = #{trainId}
+          AND carriage_number = #{carriageNumber}
+          AND seat_number = #{seatNumber}
+          AND start_station = #{departure}
+          AND end_station = #{arrival}
+          AND seat_status = 1
+          AND del_flag = 0
+    </update>
 </mapper>
