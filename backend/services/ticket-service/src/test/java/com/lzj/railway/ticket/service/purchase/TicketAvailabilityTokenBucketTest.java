@@ -16,10 +16,14 @@ import org.springframework.data.redis.core.script.RedisScript;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +47,8 @@ class TicketAvailabilityTokenBucketTest {
     private RedissonClient redissonClient;
     @Mock
     private RLock lock;
+    @Mock
+    private ScheduledExecutorService refreshExecutor;
 
     private TicketAvailabilityTokenBucket tokenBucket;
 
@@ -52,7 +58,7 @@ class TicketAvailabilityTokenBucketTest {
     @BeforeEach
     void setUp() {
         tokenBucket = new TicketAvailabilityTokenBucket(
-                seatMapper, trainRouteService, redisTemplate, redissonClient);
+                seatMapper, trainRouteService, redisTemplate, redissonClient, refreshExecutor, 0L);
     }
 
     /**
@@ -120,5 +126,46 @@ class TicketAvailabilityTokenBucketTest {
         Map<Integer, Integer> remainingTickets = tokenBucket.getRemainingTickets(3L, "A", "C");
 
         assertThat(remainingTickets).containsExactlyInAnyOrderEntriesOf(Map.of(1, 18, 2, 6));
+    }
+
+    /** 数据库仍有满足请求的实体座位时，应受控删除失效令牌桶，供下一次请求重建。 */
+    @Test
+    void shouldInvalidateStaleTokenBucketOnlyOnceWhenDatabaseStillHasTickets() {
+        when(redissonClient.getLock("railway:ticket:lock:refresh:3")).thenReturn(lock);
+        when(lock.tryLock()).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
+        when(seatMapper.countAvailableSeatsByTrainIds(List.of(3L), "A", "C"))
+                .thenReturn(List.of(new SeatRemainingDTO(3L, 1, 2)));
+        when(refreshExecutor.schedule(any(Runnable.class), eq(0L), eq(TimeUnit.SECONDS)))
+                .thenAnswer(invocation -> {
+                    invocation.<Runnable>getArgument(0).run();
+                    return mock(ScheduledFuture.class);
+                });
+
+        tokenBucket.refreshOnTokenInsufficient(3L, "A", "C", Map.of(1, 2L));
+        tokenBucket.refreshOnTokenInsufficient(3L, "A", "C", Map.of(1, 2L));
+
+        verify(redisTemplate).delete(BUCKET_KEY);
+        verify(refreshExecutor).schedule(any(Runnable.class), eq(0L), eq(TimeUnit.SECONDS));
+        verify(lock).unlock();
+    }
+
+    /** 数据库同样没有足够实体座位时，令牌桶结果可信，不应删除缓存。 */
+    @Test
+    void shouldKeepTokenBucketWhenDatabaseAlsoHasInsufficientTickets() {
+        when(redissonClient.getLock("railway:ticket:lock:refresh:3")).thenReturn(lock);
+        when(lock.tryLock()).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
+        when(seatMapper.countAvailableSeatsByTrainIds(List.of(3L), "A", "C"))
+                .thenReturn(List.of(new SeatRemainingDTO(3L, 1, 1)));
+        when(refreshExecutor.schedule(any(Runnable.class), eq(0L), eq(TimeUnit.SECONDS)))
+                .thenAnswer(invocation -> {
+                    invocation.<Runnable>getArgument(0).run();
+                    return mock(ScheduledFuture.class);
+                });
+
+        tokenBucket.refreshOnTokenInsufficient(3L, "A", "C", Map.of(1, 2L));
+
+        verify(redisTemplate, org.mockito.Mockito.never()).delete(BUCKET_KEY);
     }
 }

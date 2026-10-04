@@ -68,6 +68,8 @@ public class TicketPurchaseService {
                 passenger -> passenger.seatType(), Collectors.counting()));
         if (!tokenBucket.takeTokenFromBucket(request.trainId(), context.getDepartureName(), context.getArrivalName(),
                 affectedSegments, seatTypeCounts)) {
+            tokenBucket.refreshOnTokenInsufficient(request.trainId(), context.getDepartureName(),
+                    context.getArrivalName(), seatTypeCounts);
             throw new ClientException(TicketErrorCode.TICKET_SOLD_OUT);
         }
         try {

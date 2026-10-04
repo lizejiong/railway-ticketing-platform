@@ -1,6 +1,7 @@
 package com.lzj.railway.ticket.service.purchase;
 
 import com.lzj.railway.framework.convention.result.Result;
+import com.lzj.railway.framework.convention.exception.ClientException;
 import com.lzj.railway.framework.convention.exception.ServiceException;
 import com.lzj.railway.framework.starter.user.core.UserContext;
 import com.lzj.railway.framework.starter.user.core.UserInfoDTO;
@@ -96,5 +97,17 @@ class TicketPurchaseServiceTest {
                 .thenReturn(expected);
 
         assertThat(service.purchase(request)).isEqualTo(expected);
+    }
+
+    /** 令牌不足仍立即返回售罄，同时只触发后续请求可用的受控缓存核验。 */
+    @Test
+    void shouldScheduleTokenRefreshWhenTokenBucketIsInsufficient() {
+        when(tokenBucket.takeTokenFromBucket(3L, "北京南", "杭州东", affectedSegments, Map.of(1, 1L)))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.purchase(request)).isInstanceOf(ClientException.class)
+                .hasFieldOrPropertyWithValue("errorCode", "T000008");
+
+        verify(tokenBucket).refreshOnTokenInsufficient(3L, "北京南", "杭州东", Map.of(1, 1L));
     }
 }
