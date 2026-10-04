@@ -41,6 +41,24 @@ public interface SeatMapper {
             @Param("limit") Integer limit);
 
     /**
+     * 查询指定座位号在各车厢中的可用候选座位。
+     *
+     * <p>指定选座不能使用普通自动选座的 {@code LIMIT} 查询，否则可能只取到前几个车厢，
+     * 无法找到同一车厢内完整满足用户期望的位置组合。</p>
+     *
+     * @param trainId 列车主键
+     * @param seatType 席别编码
+     * @param affectedSegments 本次购票会占用的全部区间
+     * @param seatNumbers 用户选择的车厢内座位号
+     * @return 在全部受影响区间均可售的指定座位候选记录
+     */
+    List<SeatDO> selectAvailableChosenSeatsForSegments(
+            @Param("trainId") Long trainId,
+            @Param("seatType") Integer seatType,
+            @Param("affectedSegments") List<TrainRouteSegment> affectedSegments,
+            @Param("seatNumbers") List<String> seatNumbers);
+
+    /**
      * 在座位仍可售时锁定一个区间记录。
      *
      * @param trainId 列车主键

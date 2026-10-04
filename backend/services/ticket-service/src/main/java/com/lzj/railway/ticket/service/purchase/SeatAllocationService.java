@@ -20,7 +20,8 @@ public interface SeatAllocationService {
     List<AllocatedSeat> allocateAndLock(
             Long trainId,
             List<PurchaseTicketPassengerRequest> passengers,
-            List<TrainRouteSegment> affectedSegments);
+            List<TrainRouteSegment> affectedSegments,
+            List<String> chooseSeats);
 
     /**
      * 释放已分配座位在本次行程影响的全部区间记录。

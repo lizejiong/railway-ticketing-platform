@@ -15,7 +15,7 @@ import java.util.List;
  * @param departure 出发站编码，使用 t_station.code
  * @param arrival 到达站编码，使用 t_station.code
  * @param passengers 乘车人与席别选择
- * @param chooseSeats 用户期望座位；当前阶段仅保留参数，不支持指定或相邻选座
+ * @param chooseSeats 用户期望的车厢内座位号；例如 {@code 01A}、{@code 01C}，为空时由系统自动分配
  */
 public record PurchaseTicketRequest(
         @Schema(description = "列车 ID", example = "3")
@@ -27,6 +27,6 @@ public record PurchaseTicketRequest(
         @Schema(description = "乘车人与席别")
         @NotEmpty(message = "乘车人不能为空")
         List<@Valid PurchaseTicketPassengerRequest> passengers,
-        @Schema(description = "期望座位；暂不支持指定或相邻选座")
+        @Schema(description = "期望的车厢内座位号；需与乘车人数量一致且均为同一席别，例如 [\"01A\", \"01C\"]")
         List<String> chooseSeats) {
 }

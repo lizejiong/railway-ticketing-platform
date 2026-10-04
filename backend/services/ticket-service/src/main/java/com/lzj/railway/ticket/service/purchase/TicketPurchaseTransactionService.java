@@ -67,7 +67,7 @@ public class TicketPurchaseTransactionService {
         Map<Long, PassengerActualRemoteResponse> passengerById = passengers.stream().collect(Collectors.toMap(
                 PassengerActualRemoteResponse::id, Function.identity()));
         List<AllocatedSeat> allocatedSeats = seatAllocationService.allocateAndLock(train.getId(),
-                context.getRequest().passengers(), affectedSegments);
+                context.getRequest().passengers(), affectedSegments, context.getRequest().chooseSeats());
         LocalDateTime now = LocalDateTime.now();
         for (AllocatedSeat allocatedSeat : allocatedSeats) {
             TicketDO ticket = new TicketDO();

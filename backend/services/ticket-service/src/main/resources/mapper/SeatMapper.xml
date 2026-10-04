@@ -59,6 +59,50 @@
         LIMIT #{limit}
     </select>
 
+    <!-- 查询用户指定的车厢内座位号；同一 seat_number 可在多个车厢出现，交由业务层选择一组完整车厢。 -->
+    <select id="selectAvailableChosenSeatsForSegments"
+            resultType="com.lzj.railway.ticket.dao.entity.SeatDO">
+        SELECT candidate.id,
+               candidate.train_id,
+               candidate.carriage_number,
+               candidate.seat_number,
+               candidate.seat_type,
+               candidate.start_station,
+               candidate.end_station,
+               candidate.price,
+               candidate.seat_status,
+               candidate.create_time,
+               candidate.update_time,
+               candidate.del_flag
+        FROM t_seat candidate
+        WHERE candidate.train_id = #{trainId}
+          AND candidate.seat_type = #{seatType}
+          AND candidate.start_station = #{affectedSegments[0].departure}
+          AND candidate.end_station = #{affectedSegments[0].arrival}
+          AND candidate.seat_number IN
+        <foreach collection="seatNumbers" item="seatNumber" open="(" separator="," close=")">
+            #{seatNumber}
+        </foreach>
+          AND candidate.seat_status = 0
+          AND candidate.del_flag = 0
+          AND NOT EXISTS (
+              SELECT 1
+              FROM t_seat segment
+              WHERE segment.train_id = candidate.train_id
+                AND segment.carriage_number = candidate.carriage_number
+                AND segment.seat_number = candidate.seat_number
+                AND segment.del_flag = 0
+                AND segment.seat_status &lt;&gt; 0
+                AND (
+                    <foreach collection="affectedSegments" item="segment" separator=" OR ">
+                        (segment.start_station = #{segment.departure}
+                         AND segment.end_station = #{segment.arrival})
+                    </foreach>
+                )
+          )
+        ORDER BY candidate.carriage_number, candidate.seat_number
+    </select>
+
     <!-- 使用 seat_status 条件更新作为并发下最终的座位占用判定。 -->
     <update id="lockSeat">
         UPDATE t_seat
