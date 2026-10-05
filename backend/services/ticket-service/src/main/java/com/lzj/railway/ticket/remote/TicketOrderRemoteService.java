@@ -22,6 +22,14 @@ public interface TicketOrderRemoteService {
     Result<TicketOrderRemoteResponse> query(@RequestParam("orderSn") String orderSn,
                                             @RequestParam("username") String username);
 
+    /** 支付事件消费时按订单号读取座位快照。 */
+    @GetMapping("/api/order/ticket/internal/query")
+    Result<TicketOrderRemoteResponse> queryInternal(@RequestParam("orderSn") String orderSn);
+
+    /** 延迟关单任务尝试关闭待支付订单；返回 false 表示订单已支付或已关闭。 */
+    @PostMapping("/api/order/ticket/internal/close")
+    Result<Boolean> closeExpired(@RequestParam("orderSn") String orderSn);
+
     /** 原子关闭待支付订单。 */
     @PostMapping("/api/order/ticket/cancel")
     Result<Void> cancel(@RequestBody CancelTicketOrderRemoteRequest request);

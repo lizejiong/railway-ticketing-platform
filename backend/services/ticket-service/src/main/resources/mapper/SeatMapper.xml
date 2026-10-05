@@ -130,4 +130,24 @@
           AND seat_status = 1
           AND del_flag = 0
     </update>
+
+    <!-- 仅将本次购票此前锁定的区间座位结算为已售出，作为支付成功的最终状态。 -->
+    <update id="sellSeat">
+        UPDATE t_seat
+        SET seat_status = 2,
+            update_time = NOW()
+        WHERE train_id = #{trainId}
+          AND carriage_number = #{carriageNumber}
+          AND seat_number = #{seatNumber}
+          AND start_station = #{departure}
+          AND end_station = #{arrival}
+          AND seat_status = 1
+          AND del_flag = 0
+    </update>
+
+    <update id="refundSeat">
+        UPDATE t_seat SET seat_status = 0, update_time = NOW()
+        WHERE train_id = #{trainId} AND carriage_number = #{carriageNumber} AND seat_number = #{seatNumber}
+          AND start_station = #{departure} AND end_station = #{arrival} AND seat_status = 2 AND del_flag = 0
+    </update>
 </mapper>

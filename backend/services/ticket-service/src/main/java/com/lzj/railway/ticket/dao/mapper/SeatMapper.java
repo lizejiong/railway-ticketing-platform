@@ -89,4 +89,16 @@ public interface SeatMapper {
                    @Param("seatNumber") String seatNumber,
                    @Param("departure") String departure,
                    @Param("arrival") String arrival);
+
+    /** 将已锁定的区间座位结算为已售出，重复调用不会改变已售状态。 */
+    int sellSeat(@Param("trainId") Long trainId,
+                 @Param("carriageNumber") String carriageNumber,
+                 @Param("seatNumber") String seatNumber,
+                 @Param("departure") String departure,
+                 @Param("arrival") String arrival);
+
+    /** 退款后把已售出的区间座位恢复为可售。 */
+    int refundSeat(@Param("trainId") Long trainId, @Param("carriageNumber") String carriageNumber,
+                   @Param("seatNumber") String seatNumber, @Param("departure") String departure,
+                   @Param("arrival") String arrival);
 }

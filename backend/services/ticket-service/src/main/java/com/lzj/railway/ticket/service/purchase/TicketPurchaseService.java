@@ -10,13 +10,17 @@ import com.lzj.railway.framework.starter.idempotent.enums.IdempotentType;
 import com.lzj.railway.framework.starter.user.core.UserContext;
 import com.lzj.railway.ticket.common.errorcode.TicketErrorCode;
 import com.lzj.railway.ticket.dto.request.PurchaseTicketRequest;
+import com.lzj.railway.ticket.dto.request.RefundTicketRequest;
 import com.lzj.railway.ticket.dto.response.PurchaseTicketResponse;
 import com.lzj.railway.ticket.remote.TicketOrderRemoteService;
+import com.lzj.railway.ticket.remote.PayRemoteService;
 import com.lzj.railway.ticket.remote.UserRemoteService;
 import com.lzj.railway.ticket.remote.dto.CancelTicketOrderRemoteRequest;
 import com.lzj.railway.ticket.remote.dto.PassengerActualRemoteResponse;
 import com.lzj.railway.ticket.remote.dto.TicketOrderItemRemoteResponse;
 import com.lzj.railway.ticket.remote.dto.TicketOrderRemoteResponse;
+import com.lzj.railway.ticket.remote.dto.RefundPaymentRemoteRequest;
+import com.lzj.railway.ticket.remote.dto.RefundPaymentItemRemoteRequest;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -44,6 +48,7 @@ public class TicketPurchaseService {
     private final TicketOrderRemoteService ticketOrderRemoteService;
     private final SeatAllocationService seatAllocationService;
     private final RedissonClient redissonClient;
+    private final PayRemoteService payRemoteService;
 
     /** 进程内公平锁减少同进程线程争抢，再以 Redisson 公平锁覆盖多实例。 */
     private final Cache<String, ReentrantLock> localLocks = Caffeine.newBuilder()
@@ -94,6 +99,60 @@ public class TicketPurchaseService {
         if (cancelResult == null || !cancelResult.isSuccess()) {
             throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
+        releaseOrderResources(order);
+    }
+
+    /**
+     * 消费延迟消息后关闭超时订单，并释放其占用的实体座位和余票令牌。
+     *
+     * <p>必须先由订单服务完成条件关闭；若订单已经支付，返回 {@code false} 且不会释放任何库存。</p>
+     */
+    public void closeExpired(String orderSn) {
+        Result<TicketOrderRemoteResponse> queryResult = ticketOrderRemoteService.queryInternal(orderSn);
+        if (queryResult == null || !queryResult.isSuccess() || queryResult.getData() == null) {
+            throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        Result<Boolean> closeResult = ticketOrderRemoteService.closeExpired(orderSn);
+        if (closeResult == null || !closeResult.isSuccess() || closeResult.getData() == null) {
+            throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        if (Boolean.TRUE.equals(closeResult.getData())) {
+            releaseOrderResources(queryResult.getData());
+        }
+    }
+
+    /**
+     * 按订单明细发起退款；票务域只负责鉴权、筛选可退明细并将不可篡改的金额快照交给支付域。
+     */
+    public void refund(String orderSn, RefundTicketRequest request) {
+        String username = currentUsername();
+        Result<TicketOrderRemoteResponse> queryResult = ticketOrderRemoteService.query(orderSn, username);
+        if (queryResult == null || !queryResult.isSuccess() || queryResult.getData() == null) {
+            throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        TicketOrderRemoteResponse order = queryResult.getData();
+        if (order.status() == null || order.status() != 10) {
+            throw new ClientException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        List<Long> requestedIds = request == null ? List.of() : request.orderItemIds();
+        boolean fullRefund = request != null && Integer.valueOf(1).equals(request.type());
+        List<TicketOrderItemRemoteResponse> items = fullRefund ? order.passengerDetails()
+                : order.passengerDetails().stream().filter(item -> requestedIds != null && requestedIds.contains(item.id())).toList();
+        if (items.isEmpty() || items.stream().anyMatch(item -> item.status() == null || item.status() != 10)) {
+            throw new ClientException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        RefundPaymentRemoteRequest paymentRequest = new RefundPaymentRemoteRequest(orderSn, order.userId(), username,
+                order.trainId(), order.trainNumber(), order.departure(), order.arrival(), items.stream()
+                .map(item -> new RefundPaymentItemRemoteRequest(item.id(), item.amount(), item.seatType(),
+                        item.carriageNumber(), item.seatNumber(), item.idType(), item.idCard(), item.realName())).toList());
+        Result<Void> result = payRemoteService.refund(paymentRequest);
+        if (result == null || !result.isSuccess()) {
+            throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+    }
+
+    /** 根据订单创建时保存的座位快照释放全部受影响区间的资源。 */
+    private void releaseOrderResources(TicketOrderRemoteResponse order) {
         List<TrainRouteSegment> affectedSegments = trainRouteService.listAffectedSaleSegments(order.trainId(),
                 order.departure(), order.arrival());
         List<AllocatedSeat> seats = order.passengerDetails().stream()

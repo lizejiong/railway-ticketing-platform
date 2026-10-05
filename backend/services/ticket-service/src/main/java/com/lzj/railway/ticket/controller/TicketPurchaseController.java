@@ -3,6 +3,7 @@ package com.lzj.railway.ticket.controller;
 import com.lzj.railway.framework.convention.result.Result;
 import com.lzj.railway.framework.starter.web.result.Results;
 import com.lzj.railway.ticket.dto.request.PurchaseTicketRequest;
+import com.lzj.railway.ticket.dto.request.RefundTicketRequest;
 import com.lzj.railway.ticket.dto.response.PurchaseTicketResponse;
 import com.lzj.railway.ticket.service.purchase.TicketPurchaseService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,6 +38,14 @@ public class TicketPurchaseController {
     @Operation(summary = "取消待支付订单")
     public Result<Void> cancel(@PathVariable String orderSn) {
         ticketPurchaseService.cancel(orderSn);
+        return Results.success();
+    }
+
+    /** 对已支付订单发起整单或部分退票。 */
+    @PostMapping("/orders/{orderSn}/refund")
+    @Operation(summary = "申请退票")
+    public Result<Void> refund(@PathVariable String orderSn, @RequestBody RefundTicketRequest request) {
+        ticketPurchaseService.refund(orderSn, request);
         return Results.success();
     }
 }

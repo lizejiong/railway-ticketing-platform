@@ -11,6 +11,9 @@ public final class SeatStatus {
     /** 已锁定，等待后续订单处理。 */
     public static final int LOCKED = 1;
 
+    /** 已支付并最终售出，不再允许取消后直接释放。 */
+    public static final int SOLD = 2;
+
     private SeatStatus() {
     }
 }

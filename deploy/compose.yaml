@@ -48,6 +48,35 @@ services:
       retries: 12
       start_period: 40s
 
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    container_name: 12306-rocketmq-namesrv
+    restart: unless-stopped
+    command: sh mqnamesrv
+    ports:
+      - "${ROCKETMQ_NAMESRV_PORT:-9876}:9876"
+    volumes:
+      - rocketmq-namesrv-logs:/home/rocketmq/logs
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: 12306-rocketmq-broker
+    restart: unless-stopped
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+    depends_on:
+      - rocketmq-namesrv
+    ports:
+      - "${ROCKETMQ_BROKER_VIP_PORT:-10909}:10909"
+      - "${ROCKETMQ_BROKER_PORT:-10911}:10911"
+      - "${ROCKETMQ_BROKER_HA_PORT:-10912}:10912"
+    volumes:
+      - type: bind
+        source: ./rocketmq/broker.conf
+        target: /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+        read_only: true
+      - rocketmq-broker-logs:/home/rocketmq/logs
+      - rocketmq-broker-store:/home/rocketmq/store
+
   mysql:
     image: mysql:8.0.36
     container_name: 12306-mysql
@@ -104,4 +133,7 @@ volumes:
   redis-data:
   nacos-data:
   nacos-logs:
+  rocketmq-namesrv-logs:
+  rocketmq-broker-logs:
+  rocketmq-broker-store:
   mysql-data:

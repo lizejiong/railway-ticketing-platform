@@ -18,12 +18,14 @@ import com.lzj.railway.order.dto.request.TicketOrderCreateRequest;
 import com.lzj.railway.order.dto.request.TicketOrderItemCreateRequest;
 import com.lzj.railway.order.dto.response.TicketOrderItemResponse;
 import com.lzj.railway.order.dto.response.TicketOrderResponse;
+import com.lzj.railway.order.mq.DelayedOrderCloseEvent;
 import com.lzj.railway.order.service.OrderNumberGenerator;
 import com.lzj.railway.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -39,6 +41,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderItemPassengerMapper orderItemPassengerMapper;
     private final OrderNumberGenerator orderNumberGenerator;
     private final RedissonClient redissonClient;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 一次提交写入主订单、乘车人订单明细与按证件分片的关系记录。 */
     @Override
@@ -73,6 +76,8 @@ public class OrderServiceImpl implements OrderService {
             insertOrderItem(orderSn, request, item, now);
             insertPassengerRelation(orderSn, item, now);
         }
+        // 事务提交后再投递，避免消费者读取到尚未提交的订单快照。
+        eventPublisher.publishEvent(new DelayedOrderCloseEvent(orderSn));
         return orderSn;
     }
 
@@ -81,8 +86,18 @@ public class OrderServiceImpl implements OrderService {
     public TicketOrderResponse queryTicketOrder(String orderSn, String username) {
         OrderDO order = findOrder(orderSn);
         verifyOwner(order, username);
+        return toOrderResponse(order);
+    }
+
+    /** 内部消息消费者已由服务网络隔离，此处只负责按分片键装配订单快照。 */
+    @Override
+    public TicketOrderResponse queryTicketOrderInternal(String orderSn) {
+        return toOrderResponse(findOrder(orderSn));
+    }
+
+    private TicketOrderResponse toOrderResponse(OrderDO order) {
         List<TicketOrderItemResponse> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItemDO>()
-                        .eq(OrderItemDO::getOrderSn, orderSn))
+                        .eq(OrderItemDO::getOrderSn, order.getOrderSn()))
                 .stream().map(this::toItemResponse).toList();
         return new TicketOrderResponse(order.getOrderSn(), order.getUserId(), order.getUsername(), order.getTrainId(),
                 order.getTrainNumber(), order.getDeparture(), order.getArrival(), order.getDepartureTime(),
@@ -111,6 +126,77 @@ public class OrderServiceImpl implements OrderService {
                     .eq(OrderItemDO::getStatus, OrderItemStatus.PENDING_PAYMENT.getCode())
                     .set(OrderItemDO::getStatus, OrderItemStatus.CLOSED.getCode())
                     .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
+     * 由延迟消息触发关闭。使用原状态作为更新条件，使它与支付成功事件天然互斥。
+     */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public boolean closeExpiredTicketOrder(String orderSn) {
+        RLock lock = redissonClient.getLock("railway:order:close:" + orderSn);
+        lock.lock();
+        try {
+            int updatedOrder = orderMapper.update(null, new LambdaUpdateWrapper<OrderDO>()
+                    .eq(OrderDO::getOrderSn, orderSn)
+                    .eq(OrderDO::getStatus, OrderStatus.PENDING_PAYMENT.getCode())
+                    .set(OrderDO::getStatus, OrderStatus.CLOSED.getCode())
+                    .set(OrderDO::getUpdateTime, LocalDateTime.now()));
+            if (updatedOrder != 1) {
+                return false;
+            }
+            orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItemDO>()
+                    .eq(OrderItemDO::getOrderSn, orderSn)
+                    .eq(OrderItemDO::getStatus, OrderItemStatus.PENDING_PAYMENT.getCode())
+                    .set(OrderItemDO::getStatus, OrderItemStatus.CLOSED.getCode())
+                    .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+            return true;
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 消费退款成功消息，条件更新避免重复消息重复改变明细状态。 */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public void refundTicketOrder(String orderSn, List<Long> orderItemIds) {
+        if (orderItemIds == null || orderItemIds.isEmpty()) return;
+        orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItemDO>()
+                .eq(OrderItemDO::getOrderSn, orderSn).in(OrderItemDO::getId, orderItemIds)
+                .eq(OrderItemDO::getStatus, OrderItemStatus.PAID.getCode())
+                .set(OrderItemDO::getStatus, OrderItemStatus.REFUNDED.getCode())
+                .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+    }
+
+    /**
+     * 支付回调允许重复投递，因此订单与明细都通过原状态条件更新保证幂等。
+     */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public void confirmTicketOrderPayment(String orderSn, LocalDateTime payTime) {
+        RLock lock = redissonClient.getLock("railway:order:payment:" + orderSn);
+        lock.lock();
+        try {
+            int updatedOrder = orderMapper.update(null, new LambdaUpdateWrapper<OrderDO>()
+                    .eq(OrderDO::getOrderSn, orderSn)
+                    .eq(OrderDO::getStatus, OrderStatus.PENDING_PAYMENT.getCode())
+                    .set(OrderDO::getStatus, OrderStatus.PAID.getCode())
+                    .set(OrderDO::getPayTime, payTime)
+                    .set(OrderDO::getUpdateTime, LocalDateTime.now()));
+            if (updatedOrder == 1) {
+                orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItemDO>()
+                        .eq(OrderItemDO::getOrderSn, orderSn)
+                        .eq(OrderItemDO::getStatus, OrderItemStatus.PENDING_PAYMENT.getCode())
+                        .set(OrderItemDO::getStatus, OrderItemStatus.PAID.getCode())
+                        .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+            }
         } finally {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -177,7 +263,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private TicketOrderItemResponse toItemResponse(OrderItemDO item) {
-        return new TicketOrderItemResponse(item.getCarriageNumber(), item.getSeatType(), item.getSeatNumber(), null,
+        return new TicketOrderItemResponse(item.getId(), item.getCarriageNumber(), item.getSeatType(), item.getSeatNumber(), null,
                 item.getRealName(), item.getIdType(), item.getIdCard(), item.getPhone(), item.getAmount(),
                 item.getTicketType(), item.getStatus());
     }
