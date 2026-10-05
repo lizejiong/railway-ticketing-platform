@@ -2,7 +2,10 @@ package com.lzj.railway.order.service;
 
 import com.lzj.railway.order.dto.request.CancelTicketOrderRequest;
 import com.lzj.railway.order.dto.request.TicketOrderCreateRequest;
+import com.lzj.railway.order.dto.request.TicketOrderPageRequest;
+import com.lzj.railway.order.dto.response.TicketOrderPageResponse;
 import com.lzj.railway.order.dto.response.TicketOrderResponse;
+import com.lzj.railway.framework.convention.page.PageResponse;
 
 import java.time.LocalDateTime;
 
@@ -16,6 +19,9 @@ public interface OrderService {
 
     /** 为内部事件消费者提供订单与座位快照。 */
     TicketOrderResponse queryTicketOrderInternal(String orderSn);
+
+    /** 按当前用户分片键分页查询订单中心摘要。 */
+    PageResponse<TicketOrderPageResponse> pageTicketOrders(Long userId, TicketOrderPageRequest request);
 
     /** 将待支付订单原子关闭。 */
     void cancelTicketOrder(CancelTicketOrderRequest request);

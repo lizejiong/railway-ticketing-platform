@@ -2,6 +2,10 @@ package com.lzj.railway.order.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lzj.railway.framework.convention.page.PageResponse;
+import com.lzj.railway.framework.convention.page.PageRequest;
+import com.lzj.railway.framework.starter.persistence.toolkit.PageUtil;
 import com.lzj.railway.framework.convention.exception.ClientException;
 import com.lzj.railway.framework.convention.exception.ServiceException;
 import com.lzj.railway.order.common.OrderErrorCode;
@@ -15,9 +19,11 @@ import com.lzj.railway.order.dao.mapper.OrderItemPassengerMapper;
 import com.lzj.railway.order.dao.mapper.OrderMapper;
 import com.lzj.railway.order.dto.request.CancelTicketOrderRequest;
 import com.lzj.railway.order.dto.request.TicketOrderCreateRequest;
+import com.lzj.railway.order.dto.request.TicketOrderPageRequest;
 import com.lzj.railway.order.dto.request.TicketOrderItemCreateRequest;
 import com.lzj.railway.order.dto.response.TicketOrderItemResponse;
 import com.lzj.railway.order.dto.response.TicketOrderResponse;
+import com.lzj.railway.order.dto.response.TicketOrderPageResponse;
 import com.lzj.railway.order.mq.DelayedOrderCloseEvent;
 import com.lzj.railway.order.service.OrderNumberGenerator;
 import com.lzj.railway.order.service.OrderService;
@@ -93,6 +99,20 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public TicketOrderResponse queryTicketOrderInternal(String orderSn) {
         return toOrderResponse(findOrder(orderSn));
+    }
+
+    /**
+     * 订单表以 userId 为优先分片键；列表查询必须带上它，避免跨库广播。
+     *
+     * <p>明细查询逐订单携带 orderSn，使每一条查询精确路由到同一分片。</p>
+     */
+    @Override
+    public PageResponse<TicketOrderPageResponse> pageTicketOrders(Long userId, TicketOrderPageRequest request) {
+        Page<OrderDO> page = orderMapper.selectPage(new Page<>(request.current(), request.size()),
+                new LambdaQueryWrapper<OrderDO>().eq(OrderDO::getUserId, userId)
+                        .eq(request.status() != null, OrderDO::getStatus, request.status())
+                        .orderByDesc(OrderDO::getOrderTime));
+        return PageUtil.convert(page, this::toPageResponse);
     }
 
     private TicketOrderResponse toOrderResponse(OrderDO order) {
@@ -266,5 +286,17 @@ public class OrderServiceImpl implements OrderService {
         return new TicketOrderItemResponse(item.getId(), item.getCarriageNumber(), item.getSeatType(), item.getSeatNumber(), null,
                 item.getRealName(), item.getIdType(), item.getIdCard(), item.getPhone(), item.getAmount(),
                 item.getTicketType(), item.getStatus());
+    }
+
+    /** 将订单及精确分片读取的明细映射为订单中心列表摘要。 */
+    private TicketOrderPageResponse toPageResponse(OrderDO order) {
+        List<OrderItemDO> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItemDO>()
+                .eq(OrderItemDO::getOrderSn, order.getOrderSn()));
+        int totalAmount = items.stream().map(OrderItemDO::getAmount).filter(java.util.Objects::nonNull)
+                .reduce(0, Math::addExact);
+        List<String> passengerNames = items.stream().map(OrderItemDO::getRealName).filter(StringUtils::hasText).toList();
+        return new TicketOrderPageResponse(order.getOrderSn(), order.getTrainNumber(), order.getDeparture(),
+                order.getArrival(), order.getDepartureTime(), order.getArrivalTime(), order.getOrderTime(),
+                order.getStatus(), totalAmount, passengerNames);
     }
 }
