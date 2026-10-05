@@ -81,6 +81,30 @@ public class StationRegionCache {
         }
     }
 
+    /**
+     * 从站点缓存读取全部可售站点，供公开的车站选择接口使用。
+     *
+     * <p>名称与区域 Hash 必须同时存在；任一缓存缺失时复用预热逻辑进行一次受锁保护的回源。</p>
+     */
+    public List<TicketStationResponse> listAllStations() {
+        HashOperations<String, Object, Object> hashOperations = redisTemplate.opsForHash();
+        Map<Object, Object> names = hashOperations.entries(STATION_NAME_KEY);
+        Map<Object, Object> regions = hashOperations.entries(STATION_REGION_KEY);
+        if (names.isEmpty() || regions.isEmpty()) {
+            warmUp();
+            names = hashOperations.entries(STATION_NAME_KEY);
+            regions = hashOperations.entries(STATION_REGION_KEY);
+        }
+        Map<Object, Object> finalRegions = regions;
+        return names.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && entry.getValue() != null
+                        && finalRegions.get(entry.getKey()) != null)
+                .map(entry -> new TicketStationResponse(entry.getKey().toString(), entry.getValue().toString(),
+                        finalRegions.get(entry.getKey()).toString()))
+                .sorted(java.util.Comparator.comparing(TicketStationResponse::code))
+                .toList();
+    }
+
     private Map<String, TicketStationCacheDTO> readStations(String fromStation, String toStation) {
         HashOperations<String, Object, Object> hashOperations = redisTemplate.opsForHash();
         List<Object> stationCodes = List.of(fromStation, toStation);
