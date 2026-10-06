@@ -29,8 +29,10 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
@@ -40,6 +42,13 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TicketPurchaseService {
+    /** 订单域已支付状态。 */
+    private static final int ORDER_STATUS_PAID = 10;
+    /** 订单域部分退款状态，仍允许对其余已支付明细发起退款。 */
+    private static final int ORDER_STATUS_PARTIAL_REFUND = 11;
+    /** 订单明细已支付状态。 */
+    private static final int ORDER_ITEM_STATUS_PAID = 10;
+
     private final PurchaseTicketValidationChain validationChain;
     private final TrainRouteService trainRouteService;
     private final TicketAvailabilityTokenBucket tokenBucket;
@@ -131,14 +140,21 @@ public class TicketPurchaseService {
             throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
         TicketOrderRemoteResponse order = queryResult.getData();
-        if (order.status() == null || order.status() != 10) {
+        if (!isRefundableOrderStatus(order.status())) {
             throw new ClientException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
         List<Long> requestedIds = request == null ? List.of() : request.orderItemIds();
         boolean fullRefund = request != null && Integer.valueOf(1).equals(request.type());
-        List<TicketOrderItemRemoteResponse> items = fullRefund ? order.passengerDetails()
-                : order.passengerDetails().stream().filter(item -> requestedIds != null && requestedIds.contains(item.id())).toList();
-        if (items.isEmpty() || items.stream().anyMatch(item -> item.status() == null || item.status() != 10)) {
+        if (order.passengerDetails() == null || order.passengerDetails().isEmpty()) {
+            throw new ClientException(TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        Set<Long> requestedIdSet = requestedIds == null ? Set.of() : new HashSet<>(requestedIds);
+        List<TicketOrderItemRemoteResponse> items = order.passengerDetails().stream()
+                .filter(item -> item.status() != null && item.status() == ORDER_ITEM_STATUS_PAID)
+                .filter(item -> fullRefund || requestedIdSet.contains(item.id()))
+                .toList();
+        // 部分退款必须精确匹配请求明细，防止无效或已退款的明细被静默忽略。
+        if (items.isEmpty() || (!fullRefund && items.size() != requestedIdSet.size())) {
             throw new ClientException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
         RefundPaymentRemoteRequest paymentRequest = new RefundPaymentRemoteRequest(orderSn, order.userId(), username,
@@ -149,6 +165,11 @@ public class TicketPurchaseService {
         if (result == null || !result.isSuccess()) {
             throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
+    }
+
+    /** 判断订单是否仍存在可退款的已支付明细。 */
+    private boolean isRefundableOrderStatus(Integer status) {
+        return status != null && (status == ORDER_STATUS_PAID || status == ORDER_STATUS_PARTIAL_REFUND);
     }
 
     /** 根据订单创建时保存的座位快照释放全部受影响区间的资源。 */

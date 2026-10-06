@@ -10,7 +10,11 @@ import com.lzj.railway.ticket.dto.request.PurchaseTicketRequest;
 import com.lzj.railway.ticket.dto.response.PurchaseTicketResponse;
 import com.lzj.railway.ticket.remote.TicketOrderRemoteService;
 import com.lzj.railway.ticket.remote.UserRemoteService;
+import com.lzj.railway.ticket.remote.PayRemoteService;
 import com.lzj.railway.ticket.remote.dto.PassengerActualRemoteResponse;
+import com.lzj.railway.ticket.remote.dto.TicketOrderItemRemoteResponse;
+import com.lzj.railway.ticket.remote.dto.TicketOrderRemoteResponse;
+import com.lzj.railway.ticket.dto.request.RefundTicketRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +39,8 @@ class TicketPurchaseServiceTest {
     private TicketAvailabilityTokenBucket tokenBucket;
     private TicketPurchaseTransactionService transactionService;
     private UserRemoteService userRemoteService;
+    private TicketOrderRemoteService ticketOrderRemoteService;
+    private PayRemoteService payRemoteService;
     private RedissonClient redissonClient;
     private TicketPurchaseService service;
     private PurchaseTicketRequest request;
@@ -47,9 +53,11 @@ class TicketPurchaseServiceTest {
         tokenBucket = mock(TicketAvailabilityTokenBucket.class);
         transactionService = mock(TicketPurchaseTransactionService.class);
         userRemoteService = mock(UserRemoteService.class);
+        ticketOrderRemoteService = mock(TicketOrderRemoteService.class);
+        payRemoteService = mock(PayRemoteService.class);
         redissonClient = mock(RedissonClient.class);
         service = new TicketPurchaseService(validationChain, trainRouteService, tokenBucket, transactionService,
-                userRemoteService, mock(TicketOrderRemoteService.class), mock(SeatAllocationService.class), redissonClient);
+                userRemoteService, ticketOrderRemoteService, mock(SeatAllocationService.class), redissonClient, payRemoteService);
         UserContext.setUser(UserInfoDTO.builder().userId("2105134991746658306").username("lisi").build());
         request = new PurchaseTicketRequest(3L, "VNP", "NKH", List.of(new PurchaseTicketPassengerRequest(1001L, 1)), List.of());
         PurchaseTicketContext context = new PurchaseTicketContext(request);
@@ -109,5 +117,23 @@ class TicketPurchaseServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", "T000008");
 
         verify(tokenBucket).refreshOnTokenInsufficient(3L, "北京南", "杭州东", Map.of(1, 1L));
+    }
+
+    /** 部分退款后的整单退款只应提交尚未退款的已支付明细。 */
+    @Test
+    void shouldRefundRemainingPaidItemsForPartiallyRefundedOrder() {
+        TicketOrderItemRemoteResponse refundedItem = new TicketOrderItemRemoteResponse(101L, "01", 1, "01A",
+                1001L, "张三", 0, "110101199001011234", "13800138000", 10000, 0, 12);
+        TicketOrderItemRemoteResponse paidItem = new TicketOrderItemRemoteResponse(102L, "01", 1, "01B",
+                1002L, "李四", 0, "110101199001011235", "13800138001", 10000, 0, 10);
+        TicketOrderRemoteResponse order = new TicketOrderRemoteResponse("202610060000000001", 2105134991746658306L,
+                "lisi", 3L, "G1", "北京南", "杭州东", null, null, 11, List.of(refundedItem, paidItem));
+        when(ticketOrderRemoteService.query("202610060000000001", "lisi")).thenReturn(Result.success(order));
+        when(payRemoteService.refund(any())).thenReturn(Result.success());
+
+        service.refund("202610060000000001", new RefundTicketRequest(1, List.of()));
+
+        verify(payRemoteService).refund(org.mockito.ArgumentMatchers.argThat(request -> request.items().size() == 1
+                && request.items().get(0).orderItemId().equals(102L)));
     }
 }
