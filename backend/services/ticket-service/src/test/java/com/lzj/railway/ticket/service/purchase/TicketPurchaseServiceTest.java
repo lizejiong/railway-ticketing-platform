@@ -15,6 +15,7 @@ import com.lzj.railway.ticket.remote.dto.PassengerActualRemoteResponse;
 import com.lzj.railway.ticket.remote.dto.TicketOrderItemRemoteResponse;
 import com.lzj.railway.ticket.remote.dto.TicketOrderRemoteResponse;
 import com.lzj.railway.ticket.dto.request.RefundTicketRequest;
+import com.lzj.railway.ticket.dao.mapper.TicketMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,7 @@ class TicketPurchaseServiceTest {
     private UserRemoteService userRemoteService;
     private TicketOrderRemoteService ticketOrderRemoteService;
     private PayRemoteService payRemoteService;
+    private TicketMapper ticketMapper;
     private RedissonClient redissonClient;
     private TicketPurchaseService service;
     private PurchaseTicketRequest request;
@@ -55,9 +57,10 @@ class TicketPurchaseServiceTest {
         userRemoteService = mock(UserRemoteService.class);
         ticketOrderRemoteService = mock(TicketOrderRemoteService.class);
         payRemoteService = mock(PayRemoteService.class);
+        ticketMapper = mock(TicketMapper.class);
         redissonClient = mock(RedissonClient.class);
         service = new TicketPurchaseService(validationChain, trainRouteService, tokenBucket, transactionService,
-                userRemoteService, ticketOrderRemoteService, mock(SeatAllocationService.class), redissonClient, payRemoteService);
+                userRemoteService, ticketOrderRemoteService, mock(SeatAllocationService.class), redissonClient, payRemoteService, ticketMapper);
         UserContext.setUser(UserInfoDTO.builder().userId("2105134991746658306").username("lisi").build());
         request = new PurchaseTicketRequest(3L, "VNP", "NKH", List.of(new PurchaseTicketPassengerRequest(1001L, 1)), List.of());
         PurchaseTicketContext context = new PurchaseTicketContext(request);

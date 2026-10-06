@@ -2,6 +2,7 @@ package com.lzj.railway.ticket.service.purchase;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lzj.railway.framework.convention.exception.ClientException;
 import com.lzj.railway.framework.convention.exception.ServiceException;
 import com.lzj.railway.framework.convention.result.Result;
@@ -9,6 +10,9 @@ import com.lzj.railway.framework.starter.idempotent.annotation.Idempotent;
 import com.lzj.railway.framework.starter.idempotent.enums.IdempotentType;
 import com.lzj.railway.framework.starter.user.core.UserContext;
 import com.lzj.railway.ticket.common.errorcode.TicketErrorCode;
+import com.lzj.railway.ticket.common.constant.TicketStatus;
+import com.lzj.railway.ticket.dao.entity.TicketDO;
+import com.lzj.railway.ticket.dao.mapper.TicketMapper;
 import com.lzj.railway.ticket.dto.request.PurchaseTicketRequest;
 import com.lzj.railway.ticket.dto.request.RefundTicketRequest;
 import com.lzj.railway.ticket.dto.response.PurchaseTicketResponse;
@@ -37,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 
 /** 提交购票和取消订单的跨服务编排入口。 */
 @Service
@@ -58,6 +63,7 @@ public class TicketPurchaseService {
     private final SeatAllocationService seatAllocationService;
     private final RedissonClient redissonClient;
     private final PayRemoteService payRemoteService;
+    private final TicketMapper ticketMapper;
 
     /** 进程内公平锁减少同进程线程争抢，再以 Redisson 公平锁覆盖多实例。 */
     private final Cache<String, ReentrantLock> localLocks = Caffeine.newBuilder()
@@ -174,6 +180,11 @@ public class TicketPurchaseService {
 
     /** 根据订单创建时保存的座位快照释放全部受影响区间的资源。 */
     private void releaseOrderResources(TicketOrderRemoteResponse order) {
+        ticketMapper.update(null, new LambdaUpdateWrapper<TicketDO>()
+                .eq(TicketDO::getOrderSn, order.orderSn())
+                .eq(TicketDO::getTicketStatus, TicketStatus.UNPAID)
+                .set(TicketDO::getTicketStatus, TicketStatus.CLOSED)
+                .set(TicketDO::getUpdateTime, LocalDateTime.now()));
         List<TrainRouteSegment> affectedSegments = trainRouteService.listAffectedSaleSegments(order.trainId(),
                 order.departure(), order.arrival());
         List<AllocatedSeat> seats = order.passengerDetails().stream()

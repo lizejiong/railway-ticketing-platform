@@ -16,6 +16,8 @@ public class TicketDO {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private String username;
+    /** 所属订单号，用于支付、关闭和退款事件精确定位车票。 */
+    private String orderSn;
     private Long trainId;
     private String carriageNumber;
     private String seatNumber;

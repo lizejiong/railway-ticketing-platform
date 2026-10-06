@@ -8,6 +8,8 @@ public final class TicketStatus {
     public static final int PAID = 1;
     /** 已取消。 */
     public static final int CLOSED = 5;
+    /** 已退款。 */
+    public static final int REFUNDED = 7;
 
     private TicketStatus() {
     }

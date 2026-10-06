@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -69,6 +70,7 @@ public class TicketPurchaseTransactionService {
         List<AllocatedSeat> allocatedSeats = seatAllocationService.allocateAndLock(train.getId(),
                 context.getRequest().passengers(), affectedSegments, context.getRequest().chooseSeats());
         LocalDateTime now = LocalDateTime.now();
+        List<TicketDO> tickets = new ArrayList<>(allocatedSeats.size());
         for (AllocatedSeat allocatedSeat : allocatedSeats) {
             TicketDO ticket = new TicketDO();
             ticket.setUsername(username);
@@ -83,6 +85,7 @@ public class TicketPurchaseTransactionService {
             if (ticketMapper.insert(ticket) != 1) {
                 throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
             }
+            tickets.add(ticket);
         }
         Map<Integer, Integer> pricesBySeatType = allocatedSeats.stream().map(AllocatedSeat::seatType).distinct()
                 .collect(Collectors.toMap(Function.identity(), seatType -> price(train.getId(), context, seatType)));
@@ -107,6 +110,15 @@ public class TicketPurchaseTransactionService {
             throw exception;
         } catch (Throwable exception) {
             throw new ServiceException("订单服务调用异常", exception, TicketErrorCode.ORDER_SERVICE_FAILED);
+        }
+        // 订单号由订单域生成，返回后在同一个本地事务内回填，供后续异步状态事件精确定位车票。
+        int boundTickets = ticketMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<TicketDO>()
+                .in(TicketDO::getId, tickets.stream().map(TicketDO::getId).toList())
+                .isNull(TicketDO::getOrderSn)
+                .set(TicketDO::getOrderSn, orderSn)
+                .set(TicketDO::getUpdateTime, LocalDateTime.now()));
+        if (boundTickets != tickets.size()) {
+            throw new ServiceException(TicketErrorCode.ORDER_SERVICE_FAILED);
         }
         return new PurchaseTicketResponse(orderSn, allocatedSeats.stream()
                 .map(each -> new PurchasedTicketResponse(each.passengerId(), each.carriageNumber(), each.seatType(),
