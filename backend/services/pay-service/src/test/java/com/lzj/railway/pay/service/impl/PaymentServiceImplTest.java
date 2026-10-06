@@ -6,6 +6,7 @@ import com.lzj.railway.framework.starter.user.core.UserInfoDTO;
 import com.lzj.railway.framework.starter.web.result.Results;
 import com.lzj.railway.pay.channel.AliPayPageChannel;
 import com.lzj.railway.pay.common.PaymentStatus;
+import com.lzj.railway.pay.config.MockPaymentProperties;
 import com.lzj.railway.pay.dao.entity.PayDO;
 import com.lzj.railway.pay.dao.entity.RefundDO;
 import com.lzj.railway.pay.dao.mapper.PayMapper;
@@ -51,8 +52,9 @@ class PaymentServiceImplTest {
     private final RedissonClient redissonClient = mock(RedissonClient.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final RLock lock = mock(RLock.class);
+    private final MockPaymentProperties mockPaymentProperties = new MockPaymentProperties();
     private final PaymentServiceImpl service = new PaymentServiceImpl(payMapper, refundMapper, orderRemoteService, payIdGenerator,
-            aliPayPageChannel, redissonClient, eventPublisher);
+            aliPayPageChannel, redissonClient, eventPublisher, mockPaymentProperties);
 
     @BeforeAll
     static void initializeMybatisMetadata() {
@@ -104,6 +106,46 @@ class PaymentServiceImplTest {
 
         assertThat(completed).isTrue();
         verify(eventPublisher).publishEvent(any(PaySuccessEvent.class));
+    }
+
+    /** 已成功支付的重复回调只返回成功，不能再次投递支付成功事件。 */
+    @Test
+    void shouldNotPublishEventForRepeatedSuccessfulCallback() {
+        PayDO payment = new PayDO();
+        payment.setPaySn("20261005123456000001");
+        payment.setOrderSn("20261005123456000001");
+        payment.setTotalAmount(3500);
+        payment.setStatus(PaymentStatus.TRADE_SUCCESS.name());
+        when(payMapper.selectOne(any())).thenReturn(payment);
+
+        assertThat(service.completeAliPay(payment.getPaySn(), "2026100500000001", 3500,
+                LocalDateTime.of(2026, 10, 5, 12, 0), PaymentStatus.TRADE_SUCCESS.name())).isTrue();
+
+        verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(any(PaySuccessEvent.class));
+    }
+
+    /** 本地 Mock 确认支付复用既有成功状态机，且不会访问支付宝渠道。 */
+    @Test
+    void shouldConfirmMockPaymentWithoutCallingAliPay() {
+        UserContext.setUser(UserInfoDTO.builder().userId("10001").username("traveler").build());
+        mockPaymentProperties.setEnabled(true);
+        PayDO payment = new PayDO();
+        payment.setPaySn("20261005123456000001");
+        payment.setOrderSn("20261005123456000001");
+        payment.setChannel("MOCK");
+        payment.setTotalAmount(3500);
+        payment.setStatus(PaymentStatus.WAIT_BUYER_PAY.name());
+        when(payMapper.selectOne(any())).thenReturn(payment);
+        when(payMapper.update(any(), any())).thenReturn(1);
+        when(orderRemoteService.query(payment.getOrderSn(), "traveler")).thenReturn(Results.success(
+                new OrderPaymentRemoteResponse(payment.getOrderSn(), "traveler", "G100", 0,
+                        List.of(new OrderPaymentItemRemoteResponse(3500)))));
+
+        assertThat(service.confirmMockPayment(payment.getPaySn()).status())
+                .isEqualTo(PaymentStatus.TRADE_SUCCESS.name());
+
+        verify(eventPublisher).publishEvent(any(PaySuccessEvent.class));
+        verify(aliPayPageChannel, org.mockito.Mockito.never()).createPaymentPage(anyString(), any(), anyString());
     }
 
     @Test

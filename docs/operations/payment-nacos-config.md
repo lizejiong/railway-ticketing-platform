@@ -32,6 +32,9 @@ railway:
       issuer: railway-platform
 
 pay:
+  mock:
+    # 仅本地开发联调打开；生产环境保持 false。
+    enabled: ${PAY_MOCK_ENABLED:false}
   alipay:
     app-id: ${PAY_ALIPAY_APP_ID:}
     private-key: ${PAY_ALIPAY_PRIVATE_KEY:}

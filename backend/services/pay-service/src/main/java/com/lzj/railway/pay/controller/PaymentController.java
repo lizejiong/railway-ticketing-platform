@@ -42,6 +42,13 @@ public class PaymentController {
         return Results.success(paymentService.queryByOrderSn(orderSn));
     }
 
+    /** 本地开发中手动确认 MOCK 支付成功，仍会走与支付宝回调相同的状态机和消息链路。 */
+    @PostMapping("/mock/{paySn}/success")
+    @Operation(summary = "确认本地模拟支付成功")
+    public Result<PaymentInfoResponse> confirmMockPayment(@PathVariable String paySn) {
+        return Results.success(paymentService.confirmMockPayment(paySn));
+    }
+
     /** 仅供票务服务调用；该路径不应配置网关路由。 */
     @PostMapping("/internal/refund")
     public Result<Void> refund(@RequestBody RefundPaymentRequest request) {

@@ -10,6 +10,7 @@ import com.lzj.railway.pay.channel.AliPayPageChannel;
 import com.lzj.railway.pay.common.PayErrorCode;
 import com.lzj.railway.pay.common.PaymentChannel;
 import com.lzj.railway.pay.common.PaymentStatus;
+import com.lzj.railway.pay.config.MockPaymentProperties;
 import com.lzj.railway.pay.dao.entity.PayDO;
 import com.lzj.railway.pay.dao.entity.RefundDO;
 import com.lzj.railway.pay.dao.mapper.PayMapper;
@@ -48,6 +49,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final AliPayPageChannel aliPayPageChannel;
     private final RedissonClient redissonClient;
     private final ApplicationEventPublisher eventPublisher;
+    private final MockPaymentProperties mockPaymentProperties;
 
     /**
      * 读取订单快照计算金额，在订单粒度加锁后复用未完成支付单，避免并发请求生成多个支付宝交易。
@@ -59,6 +61,9 @@ public class PaymentServiceImpl implements PaymentService {
         OrderPaymentRemoteResponse order = loadPayableOrder(request.orderSn(), username);
         int totalAmount = calculateTotalAmount(order.passengerDetails());
         PaymentChannel channel = resolveChannel(request.channel());
+        if (channel == PaymentChannel.MOCK && !mockPaymentProperties.isEnabled()) {
+            throw new ClientException(PayErrorCode.MOCK_PAYMENT_DISABLED);
+        }
         RLock lock = redissonClient.getLock("railway:pay:create:" + request.orderSn());
         lock.lock();
         try {
@@ -69,8 +74,8 @@ public class PaymentServiceImpl implements PaymentService {
             if (PaymentStatus.TRADE_SUCCESS.name().equals(payment.getStatus())) {
                 return toResponse(payment, null);
             }
-            String paymentPage = aliPayPageChannel.createPaymentPage(payment.getPaySn(), payment.getTotalAmount(),
-                    payment.getSubject());
+            String paymentPage = channel == PaymentChannel.ALIPAY ? aliPayPageChannel.createPaymentPage(payment.getPaySn(),
+                    payment.getTotalAmount(), payment.getSubject()) : null;
             return toResponse(payment, paymentPage);
         } finally {
             if (lock.isHeldByCurrentThread()) {
@@ -89,6 +94,40 @@ public class PaymentServiceImpl implements PaymentService {
         }
         return new PaymentInfoResponse(payment.getPaySn(), payment.getOrderSn(), payment.getTotalAmount(),
                 payment.getPayAmount(), payment.getChannel(), payment.getStatus(), payment.getGmtPayment());
+    }
+
+    /**
+     * 确认本地模拟支付成功。
+     *
+     * <p>接口没有跳过用户归属校验，成功后复用支付回调状态机，以便订单和票务服务继续消费既有消息。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public PaymentInfoResponse confirmMockPayment(String paySn) {
+        if (!mockPaymentProperties.isEnabled()) {
+            throw new ClientException(PayErrorCode.MOCK_PAYMENT_DISABLED);
+        }
+        PayDO payment = findByPaySn(paySn);
+        if (payment == null) {
+            throw new ClientException(PayErrorCode.PAYMENT_NOT_FOUND);
+        }
+        loadPayableOrExistingOrder(payment.getOrderSn(), requireUsername());
+        if (!PaymentChannel.MOCK.name().equals(payment.getChannel())) {
+            throw new ClientException(PayErrorCode.PAYMENT_CHANNEL_UNSUPPORTED);
+        }
+        if (!PaymentStatus.TRADE_SUCCESS.name().equals(payment.getStatus())) {
+            LocalDateTime paymentTime = LocalDateTime.now();
+            boolean completed = completeAliPay(paySn, "MOCK-" + paySn, payment.getTotalAmount(), paymentTime,
+                    PaymentStatus.TRADE_SUCCESS.name());
+            if (!completed) {
+                throw new ServiceException(PayErrorCode.PAYMENT_CHANNEL_FAILED);
+            }
+            payment.setStatus(PaymentStatus.TRADE_SUCCESS.name());
+            payment.setTradeNo("MOCK-" + paySn);
+            payment.setPayAmount(payment.getTotalAmount());
+            payment.setGmtPayment(paymentTime);
+        }
+        return toInfoResponse(payment);
     }
 
     /**
@@ -112,12 +151,13 @@ public class PaymentServiceImpl implements PaymentService {
                 .set(PayDO::getPayAmount, paidAmount)
                 .set(PayDO::getGmtPayment, paymentTime)
                 .set(PayDO::getUpdateTime, LocalDateTime.now()));
-        if (updated == 1 || PaymentStatus.TRADE_SUCCESS.name().equals(payment.getStatus())) {
+        if (updated == 1) {
             eventPublisher.publishEvent(new PaySuccessEvent(payment.getOrderSn(), payment.getPaySn(),
                     payment.getChannel(), paymentTime));
             return true;
         }
-        return false;
+        // 重复回调说明支付已完成，向调用方返回成功，但绝不能再次发布下游事件。
+        return PaymentStatus.TRADE_SUCCESS.name().equals(payment.getStatus());
     }
 
     /**
@@ -245,9 +285,18 @@ public class PaymentServiceImpl implements PaymentService {
                 .eq(PayDO::getOrderSn, orderSn).last("LIMIT 1"));
     }
 
+    /** 按支付单号精确读取支付单，供本地模拟确认和第三方回调复用。 */
+    private PayDO findByPaySn(String paySn) {
+        return payMapper.selectOne(new LambdaQueryWrapper<PayDO>()
+                .eq(PayDO::getPaySn, paySn).last("LIMIT 1"));
+    }
+
     private PaymentChannel resolveChannel(String channel) {
         if (!StringUtils.hasText(channel) || PaymentChannel.ALIPAY.name().equalsIgnoreCase(channel)) {
             return PaymentChannel.ALIPAY;
+        }
+        if (PaymentChannel.MOCK.name().equalsIgnoreCase(channel)) {
+            return PaymentChannel.MOCK;
         }
         throw new ClientException(PayErrorCode.PAYMENT_CHANNEL_UNSUPPORTED);
     }
@@ -262,5 +311,11 @@ public class PaymentServiceImpl implements PaymentService {
 
     private PaymentResponse toResponse(PayDO payment, String paymentPage) {
         return new PaymentResponse(payment.getPaySn(), payment.getOrderSn(), payment.getStatus(), paymentPage);
+    }
+
+    /** 将持久化支付单转换为查询响应。 */
+    private PaymentInfoResponse toInfoResponse(PayDO payment) {
+        return new PaymentInfoResponse(payment.getPaySn(), payment.getOrderSn(), payment.getTotalAmount(),
+                payment.getPayAmount(), payment.getChannel(), payment.getStatus(), payment.getGmtPayment());
     }
 }

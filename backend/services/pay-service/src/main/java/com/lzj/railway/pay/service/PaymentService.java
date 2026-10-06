@@ -15,6 +15,9 @@ public interface PaymentService {
     /** 按订单号查询当前用户的支付状态。 */
     PaymentInfoResponse queryByOrderSn(String orderSn);
 
+    /** 当前用户确认本地 MOCK 支付单成功，仅在开发开关打开时可用。 */
+    PaymentInfoResponse confirmMockPayment(String paySn);
+
     /** 应用支付宝异步通知，返回 false 时控制器应通知支付宝重试。 */
     boolean completeAliPay(String paySn, String tradeNo, Integer paidAmount, LocalDateTime paymentTime, String tradeStatus);
 
