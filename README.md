@@ -1,5 +1,23 @@
 # Railway Platform
 
+## 票务查询（Redis 读模型）
+
+票务查询统一从网关调用：
+
+`GET /api/ticket/query?fromStation=VNP&toStation=NKH&departureDate=2026-10-02`
+
+`fromStation`、`toStation` 是 `t_station.code`，示例中的 `VNP`、`NKH` 分别代表北京南、南京南。查询责任链会先校验编码、日期和同站请求；随后通过 Redis 车站-地区映射定位区间。车次区间、列车和票价使用缓存旁路与 Redisson 双检锁，票价和余票由 Redis Pipeline 批量读取，服务启动时会预热车站、区间、票价和余票缓存。
+
+本轮余票 Hash 与参考项目的查询侧语义一致，Key 尚未按 `departureDate` 隔离，日期当前仅参与参数校验。因此在“锁座/购票”链路完成前，余票只可作为查询演示，不能作为真实库存扣减依据。
+
+## 票务查询
+
+`ticket-service` 默认监听 `8082`，通过 Nacos 中的 `ticket-service.yaml` 配置 MySQL 与端口，并由网关将 `/api/ticket/**` 转发至该服务。车次与余票属于公开信息，不需要携带 JWT。
+
+- `GET /api/ticket/query?departure=北京南&arrival=上海虹桥&departureDate=2026-10-02`：按区间和乘车日期查询可售车次、席别票价与实时余票。
+
+首版直接从 `12306_ticket` 的 `t_train_station_relation`、`t_train`、`t_train_station_price` 和 `t_seat` 查询；余票按未锁定座位实时聚合。暂不包含 Redis 余票缓存、选座、购票扣减、订单和支付，这些会在后续购票链路中实现。
+
 ## 用户账号核心接口
 
 所有客户端请求统一从网关 `http://127.0.0.1:8080` 进入。注册、登录、刷新令牌和退出登录为公开接口；用户资料与乘车人接口必须携带 `Authorization: Bearer <access-token>`。
@@ -405,7 +423,7 @@ cd backend
 - `order-service`：订单域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 - `pay-service`：支付域模块，预置 Spring MVC、Nacos 服务发现和配置中心依赖。
 
-当前已实现用户服务注册、登录以及用户域网关路由；票务、订单和支付服务仍只保留模块骨架，后续按服务逐个实现。
+当前已实现用户服务注册、登录、乘车人管理以及用户域网关路由；票务服务已提供公开的车次、票价与余票查询。订单和支付服务仍只保留模块骨架，后续按服务逐个实现。
 
 ## API Gateway
 

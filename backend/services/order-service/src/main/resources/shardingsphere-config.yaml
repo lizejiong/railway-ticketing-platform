@@ -1,0 +1,92 @@
+dataSources:
+  ds_0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://127.0.0.1:3306/12306_order_0?useUnicode=true&characterEncoding=UTF-8&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 12306-root
+  ds_1:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://127.0.0.1:3306/12306_order_1?useUnicode=true&characterEncoding=UTF-8&rewriteBatchedStatements=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 12306-root
+
+rules:
+  - !SHARDING
+    tables:
+      t_order:
+        actualDataNodes: ds_${0..1}.t_order_${0..31}
+        databaseStrategy:
+          complex:
+            shardingColumns: user_id,order_sn
+            shardingAlgorithmName: order_database_complex_mod
+        tableStrategy:
+          complex:
+            shardingColumns: user_id,order_sn
+            shardingAlgorithmName: order_table_complex_mod
+      t_order_item:
+        actualDataNodes: ds_${0..1}.t_order_item_${0..31}
+        databaseStrategy:
+          complex:
+            shardingColumns: user_id,order_sn
+            shardingAlgorithmName: order_database_complex_mod
+        tableStrategy:
+          complex:
+            shardingColumns: user_id,order_sn
+            shardingAlgorithmName: order_table_complex_mod
+      t_order_item_passenger:
+        actualDataNodes: ds_${0..1}.t_order_item_passenger_${0..31}
+        databaseStrategy:
+          standard:
+            shardingColumn: id_card
+            shardingAlgorithmName: passenger_database_hash_mod
+        tableStrategy:
+          standard:
+            shardingColumn: id_card
+            shardingAlgorithmName: passenger_table_hash_mod
+    shardingAlgorithms:
+      order_database_complex_mod:
+        type: CLASS_BASED
+        props:
+          strategy: complex
+          algorithmClassName: com.lzj.railway.order.dao.algorithm.OrderDatabaseComplexShardingAlgorithm
+          sharding-count: 32
+          table-sharding-count: 16
+      order_table_complex_mod:
+        type: CLASS_BASED
+        props:
+          strategy: complex
+          algorithmClassName: com.lzj.railway.order.dao.algorithm.OrderTableComplexShardingAlgorithm
+          sharding-count: 32
+      passenger_database_hash_mod:
+        type: CLASS_BASED
+        props:
+          strategy: standard
+          algorithmClassName: com.lzj.railway.framework.starter.persistence.sharding.CustomDbHashModShardingAlgorithm
+          sharding-count: 32
+          table-sharding-count: 16
+      passenger_table_hash_mod:
+        type: HASH_MOD
+        props:
+          sharding-count: 32
+  - !SINGLE
+    defaultDataSource: ds_0
+  - !ENCRYPT
+    tables:
+      t_order_item:
+        columns:
+          id_card:
+            cipherColumn: id_card
+            encryptorName: common_encryptor
+          phone:
+            cipherColumn: phone
+            encryptorName: common_encryptor
+        queryWithCipherColumn: true
+    encryptors:
+      common_encryptor:
+        type: AES
+        props:
+          aes-key-value: d6oadClrrb9A3GWo
+props:
+  sql-show: true
