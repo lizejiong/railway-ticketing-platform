@@ -188,11 +188,32 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(rollbackFor = Throwable.class)
     public void refundTicketOrder(String orderSn, List<Long> orderItemIds) {
         if (orderItemIds == null || orderItemIds.isEmpty()) return;
-        orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItemDO>()
-                .eq(OrderItemDO::getOrderSn, orderSn).in(OrderItemDO::getId, orderItemIds)
-                .eq(OrderItemDO::getStatus, OrderItemStatus.PAID.getCode())
-                .set(OrderItemDO::getStatus, OrderItemStatus.REFUNDED.getCode())
-                .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+        RLock lock = redissonClient.getLock("railway:order:refund:" + orderSn);
+        lock.lock();
+        try {
+            orderItemMapper.update(null, new LambdaUpdateWrapper<OrderItemDO>()
+                    .eq(OrderItemDO::getOrderSn, orderSn).in(OrderItemDO::getId, orderItemIds)
+                    .eq(OrderItemDO::getStatus, OrderItemStatus.PAID.getCode())
+                    .set(OrderItemDO::getStatus, OrderItemStatus.REFUNDED.getCode())
+                    .set(OrderItemDO::getUpdateTime, LocalDateTime.now()));
+            List<OrderItemDO> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItemDO>()
+                    .eq(OrderItemDO::getOrderSn, orderSn));
+            if (items.isEmpty() || items.stream().noneMatch(item -> item.getStatus()
+                    == OrderItemStatus.REFUNDED.getCode())) {
+                return;
+            }
+            int targetStatus = items.stream().allMatch(item -> item.getStatus()
+                    == OrderItemStatus.REFUNDED.getCode()) ? OrderStatus.FULL_REFUND.getCode() : OrderStatus.PARTIAL_REFUND.getCode();
+            orderMapper.update(null, new LambdaUpdateWrapper<OrderDO>()
+                    .eq(OrderDO::getOrderSn, orderSn)
+                    .in(OrderDO::getStatus, OrderStatus.PAID.getCode(), OrderStatus.PARTIAL_REFUND.getCode())
+                    .set(OrderDO::getStatus, targetStatus)
+                    .set(OrderDO::getUpdateTime, LocalDateTime.now()));
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     /**

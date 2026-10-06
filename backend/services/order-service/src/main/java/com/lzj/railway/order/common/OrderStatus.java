@@ -11,6 +11,10 @@ public enum OrderStatus {
     PENDING_PAYMENT(0),
     /** 已支付。 */
     PAID(10),
+    /** 已支付但仅部分乘车人已退票。 */
+    PARTIAL_REFUND(11),
+    /** 已支付的全部乘车人均已退票。 */
+    FULL_REFUND(12),
     /** 已完成乘车。 */
     COMPLETED(20),
     /** 未支付状态下已关闭。 */
