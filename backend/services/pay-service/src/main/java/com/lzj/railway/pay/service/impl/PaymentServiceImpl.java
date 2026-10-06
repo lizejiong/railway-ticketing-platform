@@ -35,6 +35,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 /** 支付单本地事务与支付宝收银台请求的编排实现。 */
 @Service
@@ -128,6 +129,15 @@ public class PaymentServiceImpl implements PaymentService {
         if (request == null || request.items() == null || request.items().isEmpty()) {
             throw new ClientException(PayErrorCode.PAYMENT_AMOUNT_INVALID);
         }
+        if (request.items().stream().anyMatch(item -> item == null || item.orderItemId() == null
+                || item.amount() == null || item.amount() <= 0)) {
+            throw new ClientException(PayErrorCode.PAYMENT_AMOUNT_INVALID);
+        }
+        Set<Long> requestedOrderItemIds = request.items().stream()
+                .map(RefundPaymentRequest.RefundPaymentItem::orderItemId).collect(java.util.stream.Collectors.toSet());
+        if (requestedOrderItemIds.size() != request.items().size()) {
+            throw new ClientException(PayErrorCode.REFUND_ITEM_ALREADY_PROCESSED);
+        }
         RLock lock = redissonClient.getLock("railway:pay:refund:" + request.orderSn());
         lock.lock();
         try {
@@ -135,10 +145,16 @@ public class PaymentServiceImpl implements PaymentService {
             if (payment == null || !PaymentStatus.TRADE_SUCCESS.name().equals(payment.getStatus())) {
                 throw new ClientException(PayErrorCode.ORDER_NOT_PAYABLE);
             }
+            List<RefundDO> successfulRefunds = refundMapper.selectList(new LambdaQueryWrapper<RefundDO>()
+                    .eq(RefundDO::getOrderSn, request.orderSn()).eq(RefundDO::getStatus, 1));
+            Set<Long> refundedOrderItemIds = successfulRefunds.stream().map(RefundDO::getOrderItemId)
+                    .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+            if (requestedOrderItemIds.stream().anyMatch(refundedOrderItemIds::contains)) {
+                throw new ClientException(PayErrorCode.REFUND_ITEM_ALREADY_PROCESSED);
+            }
             int amount = request.items().stream().map(RefundPaymentRequest.RefundPaymentItem::amount)
                     .reduce(0, Math::addExact);
-            int refunded = refundMapper.selectList(new LambdaQueryWrapper<RefundDO>()
-                    .eq(RefundDO::getOrderSn, request.orderSn()).eq(RefundDO::getStatus, 1)).stream()
+            int refunded = successfulRefunds.stream()
                     .map(RefundDO::getAmount).reduce(0, Math::addExact);
             if (amount <= 0 || refunded + amount > payment.getPayAmount()) {
                 throw new ClientException(PayErrorCode.PAYMENT_AMOUNT_INVALID);
@@ -148,7 +164,8 @@ public class PaymentServiceImpl implements PaymentService {
             LocalDateTime now = LocalDateTime.now();
             for (RefundPaymentRequest.RefundPaymentItem item : request.items()) {
                 RefundDO refund = new RefundDO();
-                refund.setPaySn(payment.getPaySn()); refund.setOrderSn(request.orderSn()); refund.setTradeNo(payment.getTradeNo());
+                refund.setPaySn(payment.getPaySn()); refund.setOrderSn(request.orderSn()); refund.setOrderItemId(item.orderItemId());
+                refund.setTradeNo(payment.getTradeNo());
                 refund.setAmount(item.amount()); refund.setUserId(request.userId()); refund.setUsername(request.username());
                 refund.setTrainId(request.trainId()); refund.setTrainNumber(request.trainNumber()); refund.setDeparture(request.departure());
                 refund.setArrival(request.arrival()); refund.setSeatType(item.seatType()); refund.setIdType(item.idType());

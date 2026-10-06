@@ -7,6 +7,7 @@ import com.lzj.railway.framework.starter.web.result.Results;
 import com.lzj.railway.pay.channel.AliPayPageChannel;
 import com.lzj.railway.pay.common.PaymentStatus;
 import com.lzj.railway.pay.dao.entity.PayDO;
+import com.lzj.railway.pay.dao.entity.RefundDO;
 import com.lzj.railway.pay.dao.mapper.PayMapper;
 import com.lzj.railway.pay.dao.mapper.RefundMapper;
 import com.lzj.railway.pay.dto.request.CreatePaymentRequest;
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -124,6 +126,32 @@ class PaymentServiceImplTest {
         verify(aliPayPageChannel).refund(anyString(), anyString(), org.mockito.ArgumentMatchers.eq(1200), anyString());
         verify(refundMapper).insert(any());
         verify(eventPublisher).publishEvent(any(RefundSuccessEvent.class));
+        verify(lock).unlock();
+    }
+
+    /** 已有成功退款快照时，重复的订单明细不得再次请求第三方退款。 */
+    @Test
+    void shouldRejectDuplicateRefundedOrderItem() {
+        PayDO payment = new PayDO();
+        payment.setPaySn("20261005123456000001");
+        payment.setOrderSn("20261005123456000001");
+        payment.setTradeNo("2026100500000001");
+        payment.setPayAmount(3500);
+        payment.setStatus(PaymentStatus.TRADE_SUCCESS.name());
+        RefundDO previousRefund = new RefundDO();
+        previousRefund.setOrderItemId(11L);
+        previousRefund.setAmount(1200);
+        when(payMapper.selectOne(any())).thenReturn(payment);
+        when(refundMapper.selectList(any())).thenReturn(List.of(previousRefund));
+        when(redissonClient.getLock(anyString())).thenReturn(lock);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
+
+        assertThatThrownBy(() -> service.refund(new RefundPaymentRequest(payment.getOrderSn(), 10001L, "traveler", 1L,
+                "G100", "VNP", "NKH", List.of(new RefundPaymentRequest.RefundPaymentItem(11L, 1200, 1,
+                "01", "01A", 1, "ID001", "张三")))))
+                .hasFieldOrPropertyWithValue("errorCode", "P000009");
+
+        verify(aliPayPageChannel, org.mockito.Mockito.never()).refund(anyString(), anyString(), any(), anyString());
         verify(lock).unlock();
     }
 }

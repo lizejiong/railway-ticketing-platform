@@ -11,7 +11,8 @@ public enum PayErrorCode implements ErrorCode {
     PAYMENT_AMOUNT_INVALID("P000005", "支付金额校验失败"),
     PAYMENT_CALLBACK_INVALID("P000006", "支付回调验签失败"),
     PAYMENT_CHANNEL_UNSUPPORTED("P000007", "暂不支持该支付渠道"),
-    PAYMENT_CHANNEL_FAILED("P000008", "支付渠道调用失败");
+    PAYMENT_CHANNEL_FAILED("P000008", "支付渠道调用失败"),
+    REFUND_ITEM_ALREADY_PROCESSED("P000009", "乘车人已退款，请勿重复提交");
 
     private final String code;
     private final String message;

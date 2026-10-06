@@ -17,6 +17,8 @@ public class RefundDO {
     private Long id;
     private String paySn;
     private String orderSn;
+    /** 对应订单明细，作为逐乘车人退款的幂等键。 */
+    private Long orderItemId;
     private String tradeNo;
     private Integer amount;
     private Long userId;

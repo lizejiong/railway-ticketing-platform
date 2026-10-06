@@ -122,6 +122,10 @@ services:
         source: ./mysql/init/90-import-provided-sql.sh
         target: /docker-entrypoint-initdb.d/90-import-provided-sql.sh
         read_only: true
+      - type: bind
+        source: ./mysql/migrations/001-add-refund-order-item-id.sql
+        target: /docker-entrypoint-initdb.d/91-add-refund-order-item-id.sql
+        read_only: true
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
